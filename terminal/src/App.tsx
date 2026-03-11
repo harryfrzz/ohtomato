@@ -8,7 +8,6 @@ import * as api from './api.js';
 export default function App(): React.ReactElement {
   const [mountedLLM, setMountedLLM]            = useState<string | null>(null);
   const [activeWhisperModel, setActiveWhisper] = useState<string | null>(null);
-  const [functionGemmaModel, setFunctionGemma] = useState<string | null>(null);
   const [quitting, setQuitting]                = useState(false);
   const { exit } = useApp();
 
@@ -39,10 +38,8 @@ export default function App(): React.ReactElement {
     <AppContext.Provider value={{
       mountedLLM,
       activeWhisperModel,
-      functionGemmaModel,
       setMountedLLM,
       setActiveWhisperModel: setActiveWhisper,
-      setFunctionGemmaModel: setFunctionGemma,
     }}>
       <Box flexDirection="column" paddingX={1} paddingTop={2}>
         <Logo />

@@ -120,10 +120,8 @@ export const WHISPER_MODELS: WhisperModelInfo[] = [
 export interface AppState {
   mountedLLM: string | null;
   activeWhisperModel: string | null;
-  functionGemmaModel: string | null;
   setMountedLLM: (name: string | null) => void;
   setActiveWhisperModel: (name: string | null) => void;
-  setFunctionGemmaModel: (name: string | null) => void;
 }
 
 // Agentic pipeline SSE event types

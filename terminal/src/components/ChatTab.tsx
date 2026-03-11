@@ -46,7 +46,7 @@ type ModelSection = 'llm' | 'asr';
 
 export default function ChatTab(): React.ReactElement {
   const {
-    mountedLLM, activeWhisperModel, functionGemmaModel,
+    mountedLLM, activeWhisperModel,
     setMountedLLM, setActiveWhisperModel,
   } = useAppState();
 
@@ -162,7 +162,6 @@ export default function ChatTab(): React.ReactElement {
       setSysMsg('No model mounted — type /models to select one');
       return;
     }
-    const toolModel = functionGemmaModel ?? replyModel;
     const userMsg: ChatMessage = { role: 'user', content: text };
     const history = [...messages, userMsg];
     setMessages(history);
@@ -174,7 +173,7 @@ export default function ChatTab(): React.ReactElement {
 
     let reply = '';
     try {
-      for await (const event of api.agenticChatStream(replyModel, history, undefined, 0.7, toolModel)) {
+      for await (const event of api.agenticChatStream(replyModel, history, undefined, 0.7)) {
         switch (event.type) {
           case 'token':
             reply += event.token;
@@ -212,7 +211,7 @@ export default function ChatTab(): React.ReactElement {
       setStreaming(false);
       setScrollOffset(0);
     }
-  }, [mountedLLM, functionGemmaModel, messages, streaming]);
+  }, [mountedLLM, messages, streaming]);
 
   const startASR = useCallback(async () => {
     if (asrLoadingRef.current || recordingRef.current) return;

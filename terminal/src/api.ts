@@ -97,12 +97,11 @@ export async function* agenticChatStream(
   messages: ChatMessage[],
   systemPrompt?: string,
   temperature = 0.7,
-  toolModel = 'qwen3:0.6b',
 ): AsyncGenerator<AgenticEvent> {
   const res = await fetch(`${BASE}/chat/agentic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, tool_model: toolModel, messages, system_prompt: systemPrompt, temperature }),
+    body: JSON.stringify({ model, messages, system_prompt: systemPrompt, temperature }),
   });
   if (!res.body) throw new Error('No response body');
   const decoder = new TextDecoder();
