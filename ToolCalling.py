@@ -1,17 +1,3 @@
-"""
-ToolCalling.py
-Tool registry and agentic loop using Ollama's native callable-tool API.
-
-Each tool is a plain Python async function with a Google-style docstring.
-Ollama's client extracts the JSON schema automatically — no manual schema dicts.
-
-run_agentic_loop() drives the tool-calling loop:
-  1. Call tool_model with tools=[...all callables...]
-  2. Model requests tool calls → execute each callable, feed results back
-  3. Repeat until model returns plain text
-  4. reply_model streams the final conversational response
-"""
-
 import asyncio
 import fnmatch
 import json
@@ -32,34 +18,8 @@ OLLAMA_HOST = "http://localhost:11434"
 _client = AsyncClient(host=OLLAMA_HOST)
 
 
-# ── Path resolver ──────────────────────────────────────────────────────────────
-
-_DIR_ALIASES: dict[str, str] = {
-    "home":         "~",
-    "~":            "~",
-    "desktop":      "~/Desktop",
-    "downloads":    "~/Downloads",
-    "documents":    "~/Documents",
-    "pictures":     "~/Pictures",
-    "photos":       "~/Pictures",
-    "music":        "~/Music",
-    "movies":       "~/Movies",
-    "videos":       "~/Movies",
-    "library":      "~/Library",
-    "applications": "~/Applications",
-    "public":       "~/Public",
-    "sites":        "~/Sites",
-    "tmp":          "/tmp",
-    "temp":         "/tmp",
-}
-
-
 def _resolve(path: str) -> str:
-    """Expand aliases, ~, and case-fold path components (macOS)."""
-    alias = _DIR_ALIASES.get(path.strip().lower().rstrip("/"))
-    if alias:
-        path = alias
-
+    """Expand ~ and case-fold path components (macOS)."""
     if path.startswith("~"):
         resolved = os.path.expanduser(path)
     elif not os.path.isabs(path):
@@ -87,15 +47,11 @@ def _resolve(path: str) -> str:
     return corrected
 
 
-# ── Tool functions ─────────────────────────────────────────────────────────────
-# Each function must have a Google-style docstring so Ollama can auto-generate
-# the JSON schema. Args section describes parameters.
-
 async def read_file(path: str, start_line: int = 0, end_line: int = 0) -> dict:
     """Read the full text content of a file.
 
     Args:
-        path: Absolute path, ~/relative, or a name like 'home', 'downloads'.
+        path: Absolute or ~/relative path to a file.
         start_line: 1-indexed first line to read (0 = from start).
         end_line: Last line to include (0 = to end).
 
@@ -248,7 +204,7 @@ async def list_directory(path: str, details: bool = False) -> dict:
     """List files and folders in a directory.
 
     Args:
-        path: Directory path, or an alias like 'home', 'downloads', 'desktop'.
+        path: Directory path.
         details: Include size and type for each entry if True.
 
     Returns:

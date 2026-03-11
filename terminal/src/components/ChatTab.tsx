@@ -2,12 +2,12 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
+import MarkdownText from './MarkdownText.js';
 import * as api from '../api.js';
 import { useAppState } from '../AppContext.js';
 import { WHISPER_MODELS } from '../types.js';
 import type { ChatMessage, LocalModel, RunningModel, PullProgress } from '../types.js';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function buildBar(pct: number, width: number): string {
   const filled = Math.round((pct / 100) * width);
@@ -20,7 +20,6 @@ function fmtBytes(b: number): string {
   return `${b} B`;
 }
 
-// ── Commands ─────────────────────────────────────────────────────────────────
 
 interface Command { cmd: string; description: string }
 const COMMANDS: Command[] = [
@@ -31,7 +30,8 @@ const COMMANDS: Command[] = [
   { cmd: '/help',   description: 'List all commands'                               },
 ];
 
-// ── Agentic phase ─────────────────────────────────────────────────────────────
+const CHAT_HEIGHT = 6; // messages visible at once
+
 
 type Phase =
   | { kind: 'idle' }
@@ -40,11 +40,9 @@ type Phase =
   | { kind: 'tool_call';   name: string; args: Record<string, unknown> }
   | { kind: 'tool_result'; tool: string; result: unknown };
 
-// ── Models overlay section type ───────────────────────────────────────────────
 
 type ModelSection = 'llm' | 'asr';
 
-// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ChatTab(): React.ReactElement {
   const {
@@ -52,13 +50,13 @@ export default function ChatTab(): React.ReactElement {
     setMountedLLM, setActiveWhisperModel,
   } = useAppState();
 
-  // ── Chat state ──────────────────────────────────────────────────────────────
   const [input, setInput]           = useState('');
   const [messages, setMessages]     = useState<ChatMessage[]>([]);
   const [streaming, setStreaming]   = useState(false);
   const [currentReply, setCurrent]  = useState('');
   const [phase, setPhase]           = useState<Phase>({ kind: 'idle' });
   const [sysMsg, setSysMsg]         = useState('');
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   // Command palette
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -71,7 +69,6 @@ export default function ChatTab(): React.ReactElement {
   const recordingRef  = useRef(false);
   const asrLoadingRef = useRef(false);
 
-  // ── Models overlay state ────────────────────────────────────────────────────
   const [modelsOpen, setModelsOpen]         = useState(false);
   const [modelSection, setModelSection]     = useState<ModelSection>('llm');
   const [localModels, setLocalModels]       = useState<LocalModel[]>([]);
@@ -90,7 +87,6 @@ export default function ChatTab(): React.ReactElement {
 
   useEffect(() => () => { isMounted.current = false; }, []);
 
-  // ── Models: refresh ─────────────────────────────────────────────────────────
   const refreshModels = useCallback(async () => {
     setModelsLoading(true);
     try {
@@ -111,7 +107,6 @@ export default function ChatTab(): React.ReactElement {
     if (modelsOpen) void refreshModels();
   }, [modelsOpen, refreshModels]);
 
-  // ── Models: pull ────────────────────────────────────────────────────────────
   const pullModel = useCallback(async (name: string) => {
     setPullingName(name);
     setPullProgress({ status: 'Starting…', digest: '', total: 0, completed: 0, percent: 0 });
@@ -130,7 +125,6 @@ export default function ChatTab(): React.ReactElement {
     if (isMounted.current) { setPullProgress(null); setPullingName(''); }
   }, [refreshModels]);
 
-  // ── Models: activate Whisper ────────────────────────────────────────────────
   const activateWhisper = useCallback(async (modelName: string) => {
     setModelsStatus(`Setting Whisper model: ${modelName}…`);
     try {
@@ -140,7 +134,6 @@ export default function ChatTab(): React.ReactElement {
     } catch (e) { setModelsStatus(`Error: ${(e as Error).message}`); }
   }, [setActiveWhisperModel]);
 
-  // ── Models: toggle LLM ──────────────────────────────────────────────────────
   const toggleLLM = useCallback(async (name: string) => {
     const isRunning = runningModels.some(r => r.name === name);
     if (isRunning) {
@@ -162,7 +155,6 @@ export default function ChatTab(): React.ReactElement {
     }
   }, [runningModels, setMountedLLM, refreshModels]);
 
-  // ── Agentic send ─────────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (text: string) => {
     const replyModel = mountedLLM;
     if (!text.trim() || streaming) return;
@@ -178,6 +170,7 @@ export default function ChatTab(): React.ReactElement {
     setCurrent('');
     setPhase({ kind: 'waiting' });
     setSysMsg('');
+    setScrollOffset(0);
 
     let reply = '';
     try {
@@ -199,6 +192,7 @@ export default function ChatTab(): React.ReactElement {
             setCurrent('');
             setPhase({ kind: 'idle' });
             setStreaming(false);
+            setScrollOffset(0);
             break;
           case 'error':
             setSysMsg(`[Error: ${event.message}]`);
@@ -206,6 +200,7 @@ export default function ChatTab(): React.ReactElement {
             setCurrent('');
             setPhase({ kind: 'idle' });
             setStreaming(false);
+            setScrollOffset(0);
             break;
         }
       }
@@ -215,10 +210,10 @@ export default function ChatTab(): React.ReactElement {
       setCurrent('');
       setPhase({ kind: 'idle' });
       setStreaming(false);
+      setScrollOffset(0);
     }
   }, [mountedLLM, functionGemmaModel, messages, streaming]);
 
-  // ── ASR ───────────────────────────────────────────────────────────────────────
   const startASR = useCallback(async () => {
     if (asrLoadingRef.current || recordingRef.current) return;
     asrLoadingRef.current = true;
@@ -252,7 +247,6 @@ export default function ChatTab(): React.ReactElement {
     setAsrLoading(false);
   }, []);
 
-  // ── Execute palette command ────────────────────────────────────────────────
   const execCommand = useCallback((cmd: string) => {
     setPaletteOpen(false);
     setFilter('');
@@ -268,7 +262,7 @@ export default function ChatTab(): React.ReactElement {
         void startASR();
         break;
       case '/clear':
-        setMessages([]); setCurrent(''); setSysMsg(''); setPhase({ kind: 'idle' });
+        setMessages([]); setCurrent(''); setSysMsg(''); setPhase({ kind: 'idle' }); setScrollOffset(0);
         break;
       case '/model':
         setSysMsg(`Mounted: ${mountedLLM ?? 'none'} | Whisper: ${activeWhisperModel ?? 'base'}`);
@@ -279,7 +273,6 @@ export default function ChatTab(): React.ReactElement {
     }
   }, [startASR, mountedLLM, activeWhisperModel]);
 
-  // ── Filtered commands ──────────────────────────────────────────────────────
   const filteredCmds = COMMANDS.filter(c =>
     c.cmd.startsWith(paletteFilter) ||
     c.description.toLowerCase().includes(paletteFilter.replace('/', '').toLowerCase())
@@ -288,7 +281,6 @@ export default function ChatTab(): React.ReactElement {
   const sectionLen = modelSection === 'llm' ? localModels.length : WHISPER_MODELS.length;
   const isPulling  = pullingName !== '';
 
-  // ── Input handling ─────────────────────────────────────────────────────────
   useInput((_inp, key) => {
     // Models overlay consumes all keys
     if (modelsOpen) {
@@ -323,6 +315,18 @@ export default function ChatTab(): React.ReactElement {
         return;
       }
       return;
+    }
+
+    // ── Chat scroll (works even while streaming) ──────────────────────────────
+    if (!paletteOpen) {
+      if (key.upArrow) {
+        setScrollOffset(o => Math.min(o + 1, Math.max(0, messages.length - CHAT_HEIGHT)));
+        return;
+      }
+      if (key.downArrow) {
+        setScrollOffset(o => Math.max(0, o - 1));
+        return;
+      }
     }
 
     if (streaming) return;
@@ -367,17 +371,24 @@ export default function ChatTab(): React.ReactElement {
     if (val.trim()) void sendMessage(val);
   };
 
-  const visible  = messages.slice(-6);
+  const totalMsgs     = messages.length;
+  const maxOffset     = Math.max(0, totalMsgs - CHAT_HEIGHT);
+  const clampedOff    = Math.min(scrollOffset, maxOffset);
+  const windowEnd     = totalMsgs - clampedOff;
+  const windowStart   = Math.max(0, windowEnd - CHAT_HEIGHT);
+  const visible       = messages.slice(windowStart, windowEnd);
+  const canScrollUp   = windowStart > 0;
+  const canScrollDown = clampedOff > 0;
   const noModel  = !mountedLLM;
   const pullPct  = pullProgress?.percent ?? 0;
 
   const phaseLabel = (): React.ReactElement | null => {
     switch (phase.kind) {
       case 'waiting':
-        return <Text color="green"><Spinner type="dots" />  Thinking…</Text>;
+        return <Text color="yellow"><Spinner type="dots" />  Thinking…</Text>;
       case 'tool_call':
         return (
-          <Text color="yellow">
+          <Text color="red">
             Running: <Text bold>{phase.name}</Text>
             {'('}<Text color="gray">{JSON.stringify(phase.args)}</Text>{')'}
           </Text>
@@ -393,22 +404,21 @@ export default function ChatTab(): React.ReactElement {
     }
   };
 
-  // ── Models overlay ─────────────────────────────────────────────────────────
   if (modelsOpen) {
     return (
       <Box flexDirection="column">
         {/* Header */}
         <Box marginBottom={1}>
-          <Text color="cyan" bold>Models  </Text>
-          <Text color={modelSection === 'llm' ? 'cyan' : 'gray'} bold={modelSection === 'llm'}>[l] LLMs  </Text>
-          <Text color={modelSection === 'asr' ? 'cyan' : 'gray'} bold={modelSection === 'asr'}>[a] ASR  </Text>
+          <Text color="red" bold>Models  </Text>
+          <Text color={modelSection === 'llm' ? 'red' : 'gray'} bold={modelSection === 'llm'}>[l] LLMs  </Text>
+          <Text color={modelSection === 'asr' ? 'red' : 'gray'} bold={modelSection === 'asr'}>[a] ASR  </Text>
           <Text color="gray" dimColor>  [n] download  [r] refresh  [d] delete  Esc close</Text>
         </Box>
 
         {/* Download input */}
         {showDownload && (
           <Box marginBottom={1}>
-            <Text color="cyan">Download model: </Text>
+            <Text color="red">Download model: </Text>
             <TextInput
               value={downloadInput}
               onChange={setDownloadInput}
@@ -438,13 +448,13 @@ export default function ChatTab(): React.ReactElement {
               const isMntd    = m.name === mountedLLM;
               return (
                 <Box key={m.name}>
-                  <Text color={isRunning ? 'green' : isSel ? 'cyan' : 'white'} bold={isSel || isRunning}>
+                  <Text color={isRunning ? 'yellow' : isSel ? 'red' : 'white'} bold={isSel || isRunning}>
                     {isSel ? '▶ ' : '  '}
-                    <Text color={isRunning ? 'green' : 'gray'}>{isRunning ? '● ' : '○ '}</Text>
+                    <Text color={isRunning ? 'yellow' : 'gray'}>{isRunning ? '● ' : '○ '}</Text>
                     {m.name.padEnd(36)}
                     <Text color="gray">{fmtBytes(m.size).padEnd(10)}</Text>
                     <Text color="gray" dimColor>{m.details?.parameter_size ?? ''}</Text>
-                    {isMntd && <Text color="green" bold>  ← active</Text>}
+                    {isMntd && <Text color="yellow" bold>  ← active</Text>}
                   </Text>
                 </Box>
               );
@@ -468,12 +478,12 @@ export default function ChatTab(): React.ReactElement {
               const isSel    = i === modelsSelIdx;
               return (
                 <Box key={w.name}>
-                  <Text color={isActive ? 'green' : isSel ? 'cyan' : 'white'} bold={isSel || isActive}>
+                  <Text color={isActive ? 'yellow' : isSel ? 'red' : 'white'} bold={isSel || isActive}>
                     {isSel ? '▶ ' : '  '}
-                    <Text color={isActive ? 'green' : 'gray'}>{isActive ? '● ' : '○ '}</Text>
+                    <Text color={isActive ? 'yellow' : 'gray'}>{isActive ? '● ' : '○ '}</Text>
                     {w.label.padEnd(24)}
                     <Text color="gray">{w.size.padEnd(12)}</Text>
-                    {isActive && <Text color="green" bold>← active</Text>}
+                    {isActive && <Text color="yellow" bold>← active</Text>}
                   </Text>
                 </Box>
               );
@@ -486,9 +496,9 @@ export default function ChatTab(): React.ReactElement {
 
         {/* Download progress */}
         {isPulling && (
-          <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+          <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="red" paddingX={1}>
             <Box>
-              <Text color="cyan" bold><Spinner type="dots" />{'  '}</Text>
+              <Text color="red" bold><Spinner type="dots" />{'  '}</Text>
               <Text color="white" bold>Downloading </Text>
               <Text color="cyan" bold>{pullingName}</Text>
             </Box>
@@ -510,7 +520,7 @@ export default function ChatTab(): React.ReactElement {
         {/* Status */}
         {modelsStatus && !isPulling && (
           <Box marginTop={1}>
-            <Text color={modelsStatus.startsWith('Error') || modelsStatus.startsWith('Pull error') ? 'red' : 'green'}>
+            <Text color={modelsStatus.startsWith('Error') || modelsStatus.startsWith('Pull error') ? 'red' : 'yellow'}>
               {modelsStatus}
             </Text>
           </Box>
@@ -519,7 +529,6 @@ export default function ChatTab(): React.ReactElement {
     );
   }
 
-  // ── Chat view ──────────────────────────────────────────────────────────────
   return (
     <Box flexDirection="column">
 
@@ -529,8 +538,8 @@ export default function ChatTab(): React.ReactElement {
           <Text color="red">No model mounted — type /models to select one</Text>
         ) : (
           <Box>
-            <Text color="green" bold>● </Text>
-            <Text color="green" bold>{mountedLLM}</Text>
+            <Text color="yellow" bold>● </Text>
+            <Text color="yellow" bold>{mountedLLM}</Text>
             {activeWhisperModel && (
               <Text color="gray" dimColor>  · Whisper: {activeWhisperModel}</Text>
             )}
@@ -539,15 +548,28 @@ export default function ChatTab(): React.ReactElement {
         )}
       </Box>
 
+      {/* Scroll indicator */}
+      {(canScrollUp || canScrollDown) && (
+        <Box marginBottom={1}>
+          <Text color="gray" dimColor>
+            {canScrollUp ? `↑ ${windowStart} above  ` : ''}
+            {canScrollDown ? '↓ newer below  ' : ''}
+            ↑↓ scroll
+          </Text>
+        </Box>
+      )}
+
       {/* Message history */}
       <Box flexDirection="column" marginBottom={1}>
         {visible.map((m, i) => (
-          <Box key={i} flexDirection="column" marginBottom={0}>
-            <Text color={m.role === 'user' ? 'cyan' : 'green'} bold>
-              {m.role === 'user' ? 'You' : 'AI '}
+          <Box key={i} flexDirection="column" marginBottom={1}>
+            <Text color={m.role === 'user' ? 'red' : 'yellow'} bold>
+              {m.role === 'user' ? 'You' : 'Otomato '}
             </Text>
             <Box paddingLeft={2}>
-              <Text wrap="wrap">{m.content}</Text>
+              {m.role === 'assistant'
+                ? <MarkdownText>{m.content}</MarkdownText>
+                : <Text wrap="wrap">{m.content}</Text>}
             </Box>
           </Box>
         ))}
@@ -559,21 +581,21 @@ export default function ChatTab(): React.ReactElement {
         )}
 
         {streaming && phase.kind === 'streaming' && currentReply && (
-          <Box flexDirection="column" marginBottom={0}>
-            <Text color="green" bold>AI <Spinner type="dots" /></Text>
-            <Box paddingLeft={2}><Text wrap="wrap">{currentReply}</Text></Box>
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color="yellow" bold>Otomato <Spinner type="dots" /></Text>
+            <Box paddingLeft={2}><MarkdownText>{currentReply}</MarkdownText></Box>
           </Box>
         )}
       </Box>
 
       {/* Command palette */}
       {paletteOpen && (
-        <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="cyan" paddingX={1}>
-          <Text color="cyan" bold>Commands</Text>
+        <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="red" paddingX={1}>
+          <Text color="red" bold>Commands</Text>
           {filteredCmds.length === 0 && <Text color="gray" dimColor>No matching commands</Text>}
           {filteredCmds.map((c, i) => (
             <Box key={c.cmd}>
-              <Text color={i === paletteIdx ? 'cyan' : 'gray'} bold={i === paletteIdx}>
+              <Text color={i === paletteIdx ? 'red' : 'gray'} bold={i === paletteIdx}>
                 {i === paletteIdx ? '▶ ' : '  '}
                 <Text color={i === paletteIdx ? 'white' : 'gray'} bold>{c.cmd}</Text>
                 <Text color="gray" dimColor>  {c.description}</Text>
@@ -599,8 +621,8 @@ export default function ChatTab(): React.ReactElement {
 
       {/* Input */}
       {!streaming && !recording && (
-        <Box borderStyle="round" borderColor={noModel ? 'gray' : 'cyan'} paddingX={1}>
-          <Text color={noModel ? 'gray' : 'cyan'}>{'> '}</Text>
+        <Box borderStyle="round" borderColor={noModel ? 'gray' : 'red'} paddingX={1}>
+          <Text color={noModel ? 'gray' : 'red'}>{'> '}</Text>
           <TextInput
             value={input}
             onChange={handleInputChange}

@@ -1,4 +1,3 @@
-// src/App.tsx — root: single chat view with inline /models command
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import Logo from './components/Logo.js';
@@ -31,7 +30,7 @@ export default function App(): React.ReactElement {
     return (
       <Box flexDirection="column" paddingX={1}>
         <Logo />
-        <Text color="yellow">Unloading models…</Text>
+        <Text color="red">Unloading models…</Text>
       </Box>
     );
   }
@@ -51,11 +50,11 @@ export default function App(): React.ReactElement {
           <Text color="gray">{'─'.repeat(70)}</Text>
         </Box>
         <Box marginBottom={1}>
-          <Text color="gray" dimColor>/ commands  </Text>
-          <Text color="gray" dimColor>↑↓ history  </Text>
-          <Text color="gray" dimColor>/models mount  </Text>
-          <Text color="gray" dimColor>/asr voice  </Text>
-          <Text color="gray" dimColor>ctrl+q quit</Text>
+          <Text color="red" dimColor>/ commands  </Text>
+          <Text color="red" dimColor>↑↓ history  </Text>
+          <Text color="red" dimColor>/models  </Text>
+          <Text color="red" dimColor>/asr  </Text>
+          <Text color="red" dimColor>ctrl+q quit</Text>
         </Box>
         <ChatTab />
       </Box>

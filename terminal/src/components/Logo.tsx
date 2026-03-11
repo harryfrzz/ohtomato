@@ -1,8 +1,6 @@
-// src/components/Logo.tsx
 import React from 'react';
 import { Box, Text } from 'ink';
 
-// ASCII tomato (6 lines, ~10 chars wide) + OTOMATO block text (6 lines)
 const TOMATO = [
   `  ,---.  `,
   ` ( ,~. ) `,
