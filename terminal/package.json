@@ -1,0 +1,31 @@
+{
+  "name": "automato-terminal",
+  "version": "1.0.0",
+  "description": "Automato terminal UI powered by Ink",
+  "type": "module",
+  "bin": {
+    "automato": "./dist/index.mjs"
+  },
+  "scripts": {
+    "build": "esbuild src/index.tsx --bundle --platform=node --format=esm --external:ink --external:react --external:ink-text-input --external:ink-select-input --external:ink-spinner --external:node-fetch --loader:.tsx=tsx --loader:.ts=ts --outfile=dist/index.mjs --log-level=silent",
+    "start": "sh run.sh",
+    "dev": "esbuild src/index.tsx --bundle --platform=node --format=esm --external:ink --external:react --external:ink-text-input --external:ink-select-input --external:ink-spinner --external:node-fetch --loader:.tsx=tsx --loader:.ts=ts --outfile=dist/index.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "figlet": "^1.11.0",
+    "ink": "^5.2.1",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "node-fetch": "^3.3.2",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.7.0",
+    "@types/node": "^25.4.0",
+    "@types/react": "^19.2.14",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3"
+  }
+}

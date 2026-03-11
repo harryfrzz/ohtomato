@@ -1,0 +1,41 @@
+// src/components/Logo.tsx
+import React from 'react';
+import { Box, Text } from 'ink';
+
+// ASCII tomato (6 lines, ~10 chars wide) + OTOMATO block text (6 lines)
+const TOMATO = [
+  `  ,---.  `,
+  ` ( ,~. ) `,
+  `(  \\_/  )`,
+  `(       )`,
+  ` (     ) `,
+  `  '---'  `,
+];
+
+const OTOMATO = [
+  ` ██████╗ ████████╗ ██████╗ ███╗   ███╗ █████╗ ████████╗ ██████╗ `,
+  `██╔═══██╗╚══██╔══╝██╔═══██╗████╗ ████║██╔══██╗╚══██╔══╝██╔═══██╗`,
+  `██║   ██║   ██║   ██║   ██║██╔████╔██║███████║   ██║   ██║   ██║`,
+  `██║   ██║   ██║   ██║   ██║██║╚██╔╝██║██╔══██║   ██║   ██║   ██║`,
+  `╚██████╔╝   ██║   ╚██████╔╝██║ ╚═╝ ██║██║  ██║   ██║   ╚██████╔╝`,
+  ` ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ `,
+];
+
+export default function Logo(): React.ReactElement {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box flexDirection="row">
+        <Box flexDirection="column" marginRight={1}>
+          {TOMATO.map((line, i) => (
+            <Text key={i} color="red" bold>{line}</Text>
+          ))}
+        </Box>
+        <Box flexDirection="column">
+          {OTOMATO.map((line, i) => (
+            <Text key={i} color="red" bold>{line}</Text>
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
