@@ -1,4 +1,6 @@
 import json
+import os
+import re
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
@@ -82,6 +84,11 @@ class ExecuteToolRequest(BaseModel):
 
 class LoadModelRequest(BaseModel):
     model: str
+
+
+class AutomateParseRequest(BaseModel):
+    path: str           # absolute or relative path to the .md file
+    cwd: Optional[str] = None  # working directory of the caller (Node process cwd)
 
 
 
@@ -323,6 +330,71 @@ async def execute_tool_endpoint(req: ExecuteToolRequest):
         return {"tool": req.tool_name, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Automate ──────────────────────────────────────────────────────────────────
+
+@app.post("/automate/parse", tags=["automate"])
+async def automate_parse(req: AutomateParseRequest):
+    """
+    Read an automate.md file and return a list of prompt tasks.
+
+    The file format is:
+        ## Task title
+        Prompt text that the model should execute.
+
+        ## Another task
+        Another prompt.
+
+    Each ## heading defines a task. The text beneath it (until the next ##
+    or end of file) becomes the prompt body. The heading text is used as the
+    task name shown in the UI.
+    """
+    path = os.path.expanduser(req.path)
+    if not os.path.isabs(path):
+        # Prefer the cwd sent by the caller (Node process cwd = the directory
+        # the user launched automato from).  Fall back to the server's own cwd
+        # only when the caller doesn't supply one.
+        base = req.cwd if req.cwd else os.getcwd()
+        path = os.path.join(base, path)
+
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=400, detail=f"Path is not a file: {path}")
+
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
+
+    # Parse ## headings as task separators
+    tasks: list[dict] = []
+    # Split on lines starting with exactly "## " (h2 only)
+    sections = re.split(r'^##\s+', content, flags=re.MULTILINE)
+    for section in sections:
+        if not section.strip():
+            continue
+        lines = section.splitlines()
+        title = lines[0].strip()
+        body = "\n".join(lines[1:]).strip()
+        if not body:
+            # heading with no body — skip
+            continue
+        tasks.append({"title": title, "prompt": body})
+
+    if not tasks:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "No tasks found in the file. "
+                "Use ## headings to separate tasks, e.g.:\n\n"
+                "## List files\nList all files in the current directory."
+            ),
+        )
+
+    return {"file": path, "tasks": tasks, "count": len(tasks)}
 
 
 if __name__ == "__main__":

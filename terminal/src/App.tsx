@@ -51,7 +51,8 @@ export default function App(): React.ReactElement {
           <Text color="red" dimColor>↑↓ history  </Text>
           <Text color="red" dimColor>/models  </Text>
           <Text color="red" dimColor>/asr  </Text>
-          <Text color="red" dimColor>ctrl+q quit</Text>
+          <Text color="red" dimColor>ctrl+q quit  </Text>
+          <Text color="gray" dimColor>cwd: {process.cwd()}</Text>
         </Box>
         <ChatTab />
       </Box>

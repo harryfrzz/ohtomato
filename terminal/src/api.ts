@@ -115,6 +115,25 @@ export async function* agenticChatStream(
   }
 }
 
+// ── Automate ─────────────────────────────────────────────────────────────────
+
+export interface AutomateTask {
+  title: string;
+  prompt: string;
+}
+
+export interface AutomateParseResult {
+  file: string;
+  tasks: AutomateTask[];
+  count: number;
+}
+
+export const parseAutomateFile = (path: string): Promise<AutomateParseResult> =>
+  request('/automate/parse', {
+    method: 'POST',
+    body: JSON.stringify({ path, cwd: process.cwd() }),
+  });
+
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 export const listTools = (): Promise<ApiToolsResponse> =>

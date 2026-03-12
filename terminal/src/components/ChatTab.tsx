@@ -4,6 +4,7 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import MarkdownText from './MarkdownText.js';
 import * as api from '../api.js';
+import type { AutomateTask } from '../api.js';
 import { useAppState } from '../AppContext.js';
 import { WHISPER_MODELS } from '../types.js';
 import type { ChatMessage, LocalModel, RunningModel, PullProgress } from '../types.js';
@@ -23,11 +24,11 @@ function fmtBytes(b: number): string {
 
 interface Command { cmd: string; description: string }
 const COMMANDS: Command[] = [
-  { cmd: '/models', description: 'Browse and mount/unmount LLMs and ASR models'  },
-  { cmd: '/asr',    description: 'Record voice and transcribe (on-device Whisper)' },
-  { cmd: '/clear',  description: 'Clear conversation history'                      },
-  { cmd: '/model',  description: 'Show currently mounted model'                    },
-  { cmd: '/help',   description: 'List all commands'                               },
+  { cmd: '/models',   description: 'Browse and mount/unmount LLMs and ASR models'  },
+  { cmd: '/asr',      description: 'Record voice and transcribe (on-device Whisper)' },
+  { cmd: '/clear',    description: 'Clear conversation history'                      },
+  { cmd: '/automate', description: 'Run tasks from an automate.md file sequentially' },
+  { cmd: '/help',     description: 'List all commands'                               },
 ];
 
 const CHAT_HEIGHT = 6; // messages visible at once
@@ -80,6 +81,12 @@ export default function ChatTab(): React.ReactElement {
   const [downloadInput, setDownloadInput]   = useState('');
   const [pullProgress, setPullProgress]     = useState<PullProgress | null>(null);
   const [pullingName, setPullingName]       = useState('');
+
+  // Automate
+  const [automateInput, setAutomateInput]   = useState('');   // path the user is typing after /automate
+  const [automateRunning, setAutomateRunning] = useState(false);
+  const [automateTasks, setAutomateTasks]   = useState<AutomateTask[]>([]);
+  const [automateIdx, setAutomateIdx]       = useState(0);    // current task index
 
   const isMounted     = useRef(true);
   const mountedLLMRef = useRef(mountedLLM);
@@ -213,6 +220,107 @@ export default function ChatTab(): React.ReactElement {
     }
   }, [mountedLLM, messages, streaming]);
 
+  // ── Automation runner ──────────────────────────────────────────────────────
+  // Executes each task from the parsed automate.md file one at a time,
+  // waiting for the previous agentic stream to finish before starting the next.
+  const runAutomation = useCallback(async (filePath: string) => {
+    const replyModel = mountedLLM;
+    if (!replyModel) {
+      setSysMsg('No model mounted — type /models to select one');
+      return;
+    }
+
+    setSysMsg(`Loading automation file: ${filePath}`);
+    let parsed: api.AutomateParseResult;
+    try {
+      parsed = await api.parseAutomateFile(filePath);
+    } catch (e) {
+      setSysMsg(`Automate error: ${(e as Error).message}`);
+      return;
+    }
+
+    if (parsed.count === 0) {
+      setSysMsg('No tasks found in file.');
+      return;
+    }
+
+    setAutomateTasks(parsed.tasks);
+    setAutomateIdx(0);
+    setAutomateRunning(true);
+    setSysMsg(`Running automation: ${parsed.count} task${parsed.count > 1 ? 's' : ''} from ${parsed.file}`);
+
+    // Run tasks sequentially — each task is a full agentic loop
+    let currentMessages: ChatMessage[] = [...messages];
+
+    for (let i = 0; i < parsed.tasks.length; i++) {
+      if (!isMounted.current) break;
+      const task = parsed.tasks[i]!;
+      setAutomateIdx(i);
+
+      const userMsg: ChatMessage = { role: 'user', content: task.prompt };
+      currentMessages = [...currentMessages, userMsg];
+      setMessages(currentMessages);
+      setStreaming(true);
+      setCurrent('');
+      setPhase({ kind: 'waiting' });
+      setScrollOffset(0);
+
+      let reply = '';
+      try {
+        for await (const event of api.agenticChatStream(replyModel, currentMessages, undefined, 0.7)) {
+          if (!isMounted.current) break;
+          switch (event.type) {
+            case 'token':
+              reply += event.token;
+              setCurrent(reply);
+              setPhase({ kind: 'streaming' });
+              break;
+            case 'tool_call':
+              setPhase({ kind: 'tool_call', name: event.name, args: event.arguments });
+              break;
+            case 'tool_result':
+              setPhase({ kind: 'tool_result', tool: event.tool, result: event.result });
+              break;
+            case 'done':
+              currentMessages = [...currentMessages, { role: 'assistant', content: reply }];
+              setMessages(currentMessages);
+              setCurrent('');
+              setPhase({ kind: 'idle' });
+              setStreaming(false);
+              setScrollOffset(0);
+              reply = '';
+              break;
+            case 'error':
+              setSysMsg(`[Task ${i + 1} error: ${event.message}]`);
+              currentMessages = [...currentMessages, { role: 'assistant', content: reply || `[Error: ${event.message}]` }];
+              setMessages(currentMessages);
+              setCurrent('');
+              setPhase({ kind: 'idle' });
+              setStreaming(false);
+              setScrollOffset(0);
+              reply = '';
+              break;
+          }
+        }
+      } catch (e) {
+        const msg = `[Task ${i + 1} error: ${(e as Error).message}]`;
+        currentMessages = [...currentMessages, { role: 'assistant', content: reply || msg }];
+        setMessages(currentMessages);
+        setCurrent('');
+        setPhase({ kind: 'idle' });
+        setStreaming(false);
+        setScrollOffset(0);
+      }
+    }
+
+    if (isMounted.current) {
+      setAutomateRunning(false);
+      setAutomateTasks([]);
+      setAutomateIdx(0);
+      setSysMsg(`Automation complete — ${parsed.count} task${parsed.count > 1 ? 's' : ''} finished`);
+    }
+  }, [mountedLLM, messages, streaming]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startASR = useCallback(async () => {
     if (asrLoadingRef.current || recordingRef.current) return;
     asrLoadingRef.current = true;
@@ -250,6 +358,16 @@ export default function ChatTab(): React.ReactElement {
     setPaletteOpen(false);
     setFilter('');
     setInput('');
+
+    // /automate may be called with an inline path: "/automate path/to/file.md"
+    if (cmd.startsWith('/automate')) {
+      const parts = cmd.trim().split(/\s+/);
+      const filePath = parts[1] ?? 'automate.md';
+      setAutomateInput('');
+      void runAutomation(filePath);
+      return;
+    }
+
     switch (cmd) {
       case '/models':
         setModelsOpen(true);
@@ -263,14 +381,11 @@ export default function ChatTab(): React.ReactElement {
       case '/clear':
         setMessages([]); setCurrent(''); setSysMsg(''); setPhase({ kind: 'idle' }); setScrollOffset(0);
         break;
-      case '/model':
-        setSysMsg(`Mounted: ${mountedLLM ?? 'none'} | Whisper: ${activeWhisperModel ?? 'base'}`);
-        break;
       case '/help':
         setSysMsg(COMMANDS.map(c => `${c.cmd} — ${c.description}`).join('  |  '));
         break;
     }
-  }, [startASR, mountedLLM, activeWhisperModel]);
+  }, [startASR, mountedLLM, activeWhisperModel, runAutomation]);
 
   const filteredCmds = COMMANDS.filter(c =>
     c.cmd.startsWith(paletteFilter) ||
@@ -343,9 +458,22 @@ export default function ChatTab(): React.ReactElement {
       if (key.downArrow) { setPaletteIdx(i => Math.min(filteredCmds.length - 1, i + 1)); return; }
       if (key.return) {
         const cmd = filteredCmds[paletteIdx];
-        if (cmd) execCommand(cmd.cmd);
+        if (cmd) {
+          if (cmd.cmd === '/automate') {
+            // Don't run immediately — let the user type the file path
+            setPaletteOpen(false);
+            setFilter('');
+            setInput('/automate ');
+            setSysMsg('Type a file path after /automate and press Enter (default: automate.md)');
+          } else {
+            execCommand(cmd.cmd);
+          }
+        }
         return;
       }
+      // Let backspace fall through to TextInput so the input value updates
+      // and handleInputChange can close the palette when / is deleted.
+      if (key.backspace || key.delete) return;
       return;
     }
 
@@ -354,7 +482,13 @@ export default function ChatTab(): React.ReactElement {
 
   const handleInputChange = (val: string) => {
     setInput(val);
-    if (val.startsWith('/')) {
+    // "/automate " with a trailing space means the user is now typing a file
+    // path — close the palette so they can type freely.
+    if (val.startsWith('/automate ')) {
+      setPaletteOpen(false);
+      setFilter('');
+      setAutomateInput(val.slice('/automate '.length));
+    } else if (val.startsWith('/')) {
       setPaletteOpen(true);
       setFilter(val);
       setPaletteIdx(0);
@@ -367,7 +501,14 @@ export default function ChatTab(): React.ReactElement {
   const handleSubmit = (val: string) => {
     if (paletteOpen) return;
     setInput('');
-    if (val.trim()) void sendMessage(val);
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    // Full /automate command submitted inline (e.g. /automate automate.md)
+    if (trimmed.startsWith('/automate')) {
+      execCommand(trimmed);
+      return;
+    }
+    void sendMessage(trimmed);
   };
 
   const totalMsgs     = messages.length;
@@ -586,6 +727,29 @@ export default function ChatTab(): React.ReactElement {
           </Box>
         )}
       </Box>
+
+      {/* Automate progress bar */}
+      {automateRunning && automateTasks.length > 0 && (
+        <Box marginBottom={1} borderStyle="round" borderColor="red" paddingX={1} flexDirection="column">
+          <Box>
+            <Text color="red" bold><Spinner type="dots" />{'  '}</Text>
+            <Text color="white" bold>Automate  </Text>
+            <Text color="gray" dimColor>
+              Task {automateIdx + 1}/{automateTasks.length}:{'  '}
+            </Text>
+            <Text color="yellow" bold>{automateTasks[automateIdx]?.title ?? ''}</Text>
+          </Box>
+          <Box>
+            <Text color="gray" dimColor>
+              {'['}
+              {'█'.repeat(automateIdx + 1)}
+              {'░'.repeat(Math.max(0, automateTasks.length - automateIdx - 1))}
+              {']'}
+              {'  '}{Math.round(((automateIdx + 1) / automateTasks.length) * 100)}%
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {/* Command palette */}
       {paletteOpen && (
