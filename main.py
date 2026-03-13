@@ -31,6 +31,7 @@ from ToolCalling import (
     run_agentic_loop,
     get_tools_list,
 )
+from PluginLoader import list_plugins, reload_plugins
 
 
 app = FastAPI(
@@ -330,6 +331,20 @@ async def execute_tool_endpoint(req: ExecuteToolRequest):
         return {"tool": req.tool_name, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Plugins ───────────────────────────────────────────────────────────────────
+
+@app.get("/plugins", tags=["plugins"])
+async def get_plugins():
+    plugins = list_plugins()
+    return {"plugins": plugins, "count": len(plugins)}
+
+
+@app.post("/plugins/reload", tags=["plugins"])
+async def reload_plugins_endpoint():
+    plugins = reload_plugins()
+    return {"plugins": plugins, "count": len(plugins), "reloaded": True}
 
 
 # ── Automate ──────────────────────────────────────────────────────────────────

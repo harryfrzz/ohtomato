@@ -13,13 +13,13 @@ from typing import Any, AsyncGenerator, Optional
 from ollama import AsyncClient
 
 from LLMInference import chat_stream, load_model
+import PluginLoader
 
 OLLAMA_HOST = "http://localhost:11434"
 _client = AsyncClient(host=OLLAMA_HOST)
 
 
 def _resolve(path: str) -> str:
-    """Expand ~ and case-fold path components (macOS)."""
     if path.startswith("~"):
         resolved = os.path.expanduser(path)
     elif not os.path.isabs(path):
@@ -48,16 +48,6 @@ def _resolve(path: str) -> str:
 
 
 async def read_file(path: str, start_line: int = 0, end_line: int = 0) -> dict:
-    """Read the full text content of a file.
-
-    Args:
-        path: Absolute or ~/relative path to a file.
-        start_line: 1-indexed first line to read (0 = from start).
-        end_line: Last line to include (0 = to end).
-
-    Returns:
-        dict with keys: path, content, lines.
-    """
     p = _resolve(path)
     try:
         with open(p, "r", errors="replace") as f:
@@ -73,15 +63,6 @@ async def read_file(path: str, start_line: int = 0, end_line: int = 0) -> dict:
 
 
 async def write_file(path: str, content: str) -> dict:
-    """Write (overwrite) a file with the given content. Creates parent dirs.
-
-    Args:
-        path: File path to write.
-        content: Full content to write to the file.
-
-    Returns:
-        dict with keys: path, bytes_written.
-    """
     p = _resolve(path)
     try:
         os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
@@ -93,15 +74,6 @@ async def write_file(path: str, content: str) -> dict:
 
 
 async def append_file(path: str, content: str) -> dict:
-    """Append text to the end of a file without overwriting.
-
-    Args:
-        path: File path to append to.
-        content: Text to append.
-
-    Returns:
-        dict with keys: path, bytes_appended.
-    """
     p = _resolve(path)
     try:
         os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)
@@ -113,17 +85,6 @@ async def append_file(path: str, content: str) -> dict:
 
 
 async def patch_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict:
-    """Find-and-replace text inside a file.
-
-    Args:
-        path: File path to edit.
-        old_string: Exact text to find.
-        new_string: Replacement text.
-        replace_all: Replace every occurrence if True, else only the first.
-
-    Returns:
-        dict with keys: path, replacements.
-    """
     p = _resolve(path)
     try:
         with open(p, "r", errors="replace") as f:
@@ -141,14 +102,6 @@ async def patch_file(path: str, old_string: str, new_string: str, replace_all: b
 
 
 async def delete_file(path: str) -> dict:
-    """Permanently delete a file.
-
-    Args:
-        path: Path to the file to delete.
-
-    Returns:
-        dict with key: deleted.
-    """
     p = _resolve(path)
     try:
         os.remove(p)
@@ -158,15 +111,6 @@ async def delete_file(path: str) -> dict:
 
 
 async def move_file(source: str, destination: str) -> dict:
-    """Move or rename a file or directory.
-
-    Args:
-        source: Source path.
-        destination: Destination path.
-
-    Returns:
-        dict with keys: moved, to.
-    """
     src = _resolve(source)
     dst = _resolve(destination)
     try:
@@ -178,15 +122,6 @@ async def move_file(source: str, destination: str) -> dict:
 
 
 async def copy_file(source: str, destination: str) -> dict:
-    """Copy a file or directory to a new location.
-
-    Args:
-        source: Source path.
-        destination: Destination path.
-
-    Returns:
-        dict with keys: copied, to.
-    """
     src = _resolve(source)
     dst = _resolve(destination)
     try:
@@ -201,15 +136,6 @@ async def copy_file(source: str, destination: str) -> dict:
 
 
 async def list_directory(path: str, details: bool = False) -> dict:
-    """List files and folders in a directory.
-
-    Args:
-        path: Directory path.
-        details: Include size and type for each entry if True.
-
-    Returns:
-        dict with keys: path, entries, count, listing (newline-separated text).
-    """
     p = _resolve(path)
     try:
         raw = os.listdir(p)
@@ -232,14 +158,6 @@ async def list_directory(path: str, details: bool = False) -> dict:
 
 
 async def create_directory(path: str) -> dict:
-    """Create a directory including any missing parent directories.
-
-    Args:
-        path: Directory path to create.
-
-    Returns:
-        dict with key: created.
-    """
     p = _resolve(path)
     try:
         os.makedirs(p, exist_ok=True)
@@ -249,14 +167,6 @@ async def create_directory(path: str) -> dict:
 
 
 async def delete_directory(path: str) -> dict:
-    """Recursively delete a directory and all its contents.
-
-    Args:
-        path: Directory path to delete.
-
-    Returns:
-        dict with key: deleted.
-    """
     p = _resolve(path)
     try:
         shutil.rmtree(p)
@@ -266,16 +176,6 @@ async def delete_directory(path: str) -> dict:
 
 
 async def find_files(directory: str, pattern: str, max_results: int = 50) -> dict:
-    """Find files matching a glob pattern inside a directory tree.
-
-    Args:
-        directory: Root directory to search in.
-        pattern: Glob pattern e.g. '*.py' or '**/*.ts'.
-        max_results: Maximum number of results to return.
-
-    Returns:
-        dict with keys: directory, pattern, matches, count.
-    """
     d       = _resolve(directory)
     matches: list[str] = []
     try:
@@ -294,17 +194,6 @@ async def find_files(directory: str, pattern: str, max_results: int = 50) -> dic
 
 
 async def search_in_files(directory: str, pattern: str, file_pattern: str = "*", max_results: int = 50) -> dict:
-    """Search for a text pattern or regex inside files in a directory.
-
-    Args:
-        directory: Root directory to search in.
-        pattern: Text or regex to search for.
-        file_pattern: Limit to files matching this glob e.g. '*.py'.
-        max_results: Maximum number of matches to return.
-
-    Returns:
-        dict with keys: results, count.
-    """
     d       = _resolve(directory)
     results: list[dict] = []
     try:
@@ -333,17 +222,6 @@ async def search_in_files(directory: str, pattern: str, file_pattern: str = "*",
 
 
 async def run_command(command: str, workdir: str = "~", timeout: int = 30, background: bool = False) -> dict:
-    """Run a shell command and return stdout, stderr, and exit code.
-
-    Args:
-        command: Shell command to run.
-        workdir: Working directory (defaults to home).
-        timeout: Timeout in seconds.
-        background: Run in background without waiting for output.
-
-    Returns:
-        dict with keys: stdout, stderr, returncode, command.
-    """
     cwd = _resolve(workdir)
     try:
         if background:
@@ -369,15 +247,6 @@ async def run_command(command: str, workdir: str = "~", timeout: int = 30, backg
 
 
 async def run_python(code: str, timeout: int = 15) -> dict:
-    """Execute a Python code snippet and return stdout and stderr.
-
-    Args:
-        code: Python source code to execute.
-        timeout: Timeout in seconds.
-
-    Returns:
-        dict with keys: stdout, stderr, returncode.
-    """
     try:
         result = subprocess.run(
             [sys.executable, "-c", code],
@@ -395,15 +264,6 @@ async def run_python(code: str, timeout: int = 15) -> dict:
 
 
 async def zip_files(output_path: str, paths: list) -> dict:
-    """Create a zip archive from a list of files or directories.
-
-    Args:
-        output_path: Path for the output .zip file.
-        paths: List of file or directory paths to include.
-
-    Returns:
-        dict with keys: created, files_added.
-    """
     out   = _resolve(output_path)
     srcs  = [_resolve(p) for p in paths]
     try:
@@ -423,15 +283,6 @@ async def zip_files(output_path: str, paths: list) -> dict:
 
 
 async def unzip_file(zip_path: str, output_dir: str) -> dict:
-    """Extract a zip archive into a directory.
-
-    Args:
-        zip_path: Path to the .zip file.
-        output_dir: Directory to extract into.
-
-    Returns:
-        dict with keys: extracted_to, files, count.
-    """
     zp  = _resolve(zip_path)
     out = _resolve(output_dir)
     try:
@@ -445,11 +296,6 @@ async def unzip_file(zip_path: str, output_dir: str) -> dict:
 
 
 async def get_system_info() -> dict:
-    """Return OS, CPU, memory, disk, and Python version info.
-
-    Returns:
-        dict with system information.
-    """
     try:
         import psutil
         mem  = psutil.virtual_memory()
@@ -481,23 +327,10 @@ async def get_system_info() -> dict:
 
 
 async def get_env(keys: list) -> dict:
-    """Read one or more environment variables.
-
-    Args:
-        keys: List of environment variable names to read.
-
-    Returns:
-        dict mapping each key to its value or None.
-    """
     return {k: os.environ.get(k) for k in keys}
 
 
 async def get_clipboard() -> dict:
-    """Read the current contents of the system clipboard.
-
-    Returns:
-        dict with key: clipboard.
-    """
     try:
         r = subprocess.run(["pbpaste"], capture_output=True, text=True)
         return {"clipboard": r.stdout}
@@ -506,14 +339,6 @@ async def get_clipboard() -> dict:
 
 
 async def set_clipboard(text: str) -> dict:
-    """Write text to the system clipboard.
-
-    Args:
-        text: Text to copy to clipboard.
-
-    Returns:
-        dict with keys: copied, length.
-    """
     try:
         subprocess.run(["pbcopy"], input=text, text=True, check=True)
         return {"copied": True, "length": len(text)}
@@ -522,14 +347,6 @@ async def set_clipboard(text: str) -> dict:
 
 
 async def open_url(url: str) -> dict:
-    """Open a URL in the default web browser.
-
-    Args:
-        url: URL to open.
-
-    Returns:
-        dict with key: opened.
-    """
     try:
         subprocess.Popen(["open", url])
         return {"opened": url}
@@ -538,14 +355,6 @@ async def open_url(url: str) -> dict:
 
 
 async def open_app(name: str) -> dict:
-    """Launch an application by name on macOS.
-
-    Args:
-        name: Application name e.g. 'Safari', 'Calculator'.
-
-    Returns:
-        dict with key: opened.
-    """
     try:
         subprocess.Popen(["open", "-a", name])
         return {"opened": name}
@@ -554,17 +363,6 @@ async def open_app(name: str) -> dict:
 
 
 async def http_request(url: str, method: str = "GET", headers: Optional[dict] = None, body: Optional[str] = None) -> dict:
-    """Make an HTTP request and return the response.
-
-    Args:
-        url: Request URL.
-        method: HTTP method: GET, POST, PUT, DELETE, or PATCH.
-        headers: Request headers as key-value pairs.
-        body: Request body string.
-
-    Returns:
-        dict with keys: status_code, json or body.
-    """
     import httpx
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as hc:
@@ -576,21 +374,12 @@ async def http_request(url: str, method: str = "GET", headers: Optional[dict] = 
         try:
             return {"status_code": resp.status_code, "json": resp.json()}
         except Exception:
-            return {"status_code": resp.status_code, "body": resp.text[:3000]}
+            return {"status_code": resp.status_code, "body": resp.text[:10000]}
     except Exception as ex:
         return {"error": str(ex)}
 
 
 async def search_web(query: str, max_results: int = 5) -> dict:
-    """Search the web using DuckDuckGo and return top results.
-
-    Args:
-        query: Search query string.
-        max_results: Number of results to return.
-
-    Returns:
-        dict with keys: query, results, count.
-    """
     import httpx
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as hc:
@@ -622,15 +411,6 @@ async def search_web(query: str, max_results: int = 5) -> dict:
 
 
 async def get_weather(location: str, unit: str = "celsius") -> dict:
-    """Get current weather for a location.
-
-    Args:
-        location: City name or coordinates.
-        unit: Temperature unit, either 'celsius' or 'fahrenheit'.
-
-    Returns:
-        dict with weather details.
-    """
     import httpx
     fmt = "m" if unit == "celsius" else "u"
     try:
@@ -656,10 +436,6 @@ async def get_weather(location: str, unit: str = "celsius") -> dict:
         return {"error": str(ex)}
 
 
-# ── Tool registry ──────────────────────────────────────────────────────────────
-
-# All callable tools — passed directly to Ollama's tools= parameter.
-# Ollama reads the Google-style docstrings to build the JSON schema.
 ALL_TOOLS: list = [
     read_file,
     write_file,
@@ -688,21 +464,34 @@ ALL_TOOLS: list = [
     get_weather,
 ]
 
-# Name → callable map for dispatch
-_TOOL_MAP: dict[str, Any] = {fn.__name__: fn for fn in ALL_TOOLS}
+# Base tool map (built-ins only); plugins are merged at call time
+_BUILTIN_TOOL_MAP: dict[str, Any] = {fn.__name__: fn for fn in ALL_TOOLS}
+
+
+def _all_tools() -> list[Any]:
+    """Return built-in tools plus any currently loaded plugin tools."""
+    return ALL_TOOLS + PluginLoader.get_plugin_tools()
+
+
+def _tool_map() -> dict[str, Any]:
+    """Return a merged name→callable map including plugin tools."""
+    m = dict(_BUILTIN_TOOL_MAP)
+    for fn in PluginLoader.get_plugin_tools():
+        m[fn.__name__] = fn
+    return m
 
 
 def get_tools_list() -> list[dict]:
     """Return tool schemas as dicts (for /tools endpoint)."""
     from ollama._utils import convert_function_to_tool  # type: ignore[import]
-    return [convert_function_to_tool(fn).model_dump(exclude_none=True) for fn in ALL_TOOLS]
+    return [convert_function_to_tool(fn).model_dump(exclude_none=True) for fn in _all_tools()]
 
 
 async def execute_tool(name: str, args: dict) -> dict:
     """Dispatch a tool call by name."""
-    fn = _TOOL_MAP.get(name)
+    fn = _tool_map().get(name)
     if fn is None:
-        return {"error": f"Unknown tool '{name}'. Available: {sorted(_TOOL_MAP.keys())}"}
+        return {"error": f"Unknown tool '{name}'. Available: {sorted(_tool_map().keys())}"}
     try:
         result = await fn(**args)
         return result if isinstance(result, dict) else {"result": result}
@@ -734,19 +523,6 @@ async def run_agentic_loop(
     temperature: float = 0.7,
     max_iterations: int = 10,
 ) -> AsyncGenerator[dict, None]:
-    """
-    Agentic loop using Ollama's native callable-tool API.
-
-    tool_model drives all tool calls (list, read, write, etc.).
-    reply_model streams the final conversational response.
-
-    Yielded event shapes:
-        {"type": "tool_call",   "name": str,  "arguments": dict}
-        {"type": "tool_result", "tool": str,  "result": dict}
-        {"type": "token",       "token": str}
-        {"type": "done"}
-        {"type": "error",       "message": str}
-    """
     # Pre-load tool model to avoid cold-start latency
     try:
         await load_model(tool_model)
@@ -767,7 +543,6 @@ async def run_agentic_loop(
     tool_steps: list[dict] = []
 
     def _real_content_from_steps(write_content: str) -> str:
-        """Replace placeholder write content with real gathered data."""
         if not tool_steps:
             return write_content
         _PLACEHOLDERS = ("[list", "[file", "[content", "[data", "0 files", "placeholder")
@@ -799,7 +574,7 @@ async def run_agentic_loop(
             response = await _client.chat(
                 model=tool_model,
                 messages=tool_history,
-                tools=ALL_TOOLS,          # pass callables directly
+                tools=_all_tools(),   # includes plugin tools
                 stream=False,
                 options={"temperature": 0.0},
                 keep_alive=-1,

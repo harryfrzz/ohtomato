@@ -30,7 +30,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ── Models ───────────────────────────────────────────────────────────────────
 
 export const listModels = (): Promise<ApiModelsResponse> =>
   request('/models');
@@ -67,8 +66,6 @@ export async function* pullModelStream(model: string): AsyncGenerator<PullProgre
   }
 }
 
-// ── Inference ────────────────────────────────────────────────────────────────
-
 export async function* chatStream(
   model: string,
   messages: ChatMessage[],
@@ -97,15 +94,18 @@ export async function* agenticChatStream(
   messages: ChatMessage[],
   systemPrompt?: string,
   temperature = 0.7,
+  signal?: AbortSignal,
 ): AsyncGenerator<AgenticEvent> {
   const res = await fetch(`${BASE}/chat/agentic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, system_prompt: systemPrompt, temperature }),
+    signal: signal as RequestInit['signal'],
   });
   if (!res.body) throw new Error('No response body');
   const decoder = new TextDecoder();
   for await (const chunk of res.body) {
+    if (signal?.aborted) break;
     const text = decoder.decode(chunk as Buffer);
     for (const line of text.split('\n')) {
       if (line.startsWith('data: ')) {
@@ -114,8 +114,6 @@ export async function* agenticChatStream(
     }
   }
 }
-
-// ── Automate ─────────────────────────────────────────────────────────────────
 
 export interface AutomateTask {
   title: string;
@@ -134,8 +132,6 @@ export const parseAutomateFile = (path: string): Promise<AutomateParseResult> =>
     body: JSON.stringify({ path, cwd: process.cwd() }),
   });
 
-// ── Tools ────────────────────────────────────────────────────────────────────
-
 export const listTools = (): Promise<ApiToolsResponse> =>
   request('/tools');
 
@@ -147,8 +143,6 @@ export const executeTool = (
     method: 'POST',
     body: JSON.stringify({ tool_name, arguments: arguments_ }),
   });
-
-// ── ASR ──────────────────────────────────────────────────────────────────────
 
 export const startRecording = (): Promise<{ status: string; sample_rate?: number }> =>
   request('/asr/record/start', { method: 'POST' });
@@ -163,6 +157,25 @@ export const recordingStatus = (): Promise<ApiRecordingStatus> =>
 
 export const setWhisperModel = (modelSize: string): Promise<{ default_model: string }> =>
   request(`/asr/model?model_size=${encodeURIComponent(modelSize)}`, { method: 'POST' });
+
+export interface PluginInfo {
+  name: string;
+  version: string;
+  description: string;
+  file: string;
+  tools: string[];
+}
+
+export interface PluginsResponse {
+  plugins: PluginInfo[];
+  count: number;
+}
+
+export const listPlugins = (): Promise<PluginsResponse> =>
+  request('/plugins');
+
+export const reloadPlugins = (): Promise<PluginsResponse & { reloaded: boolean }> =>
+  request('/plugins/reload', { method: 'POST' });
 
 // Re-export types for convenience
 export type {

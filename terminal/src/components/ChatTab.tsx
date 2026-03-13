@@ -4,7 +4,7 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import MarkdownText from './MarkdownText.js';
 import * as api from '../api.js';
-import type { AutomateTask } from '../api.js';
+import type { AutomateTask, PluginInfo } from '../api.js';
 import { useAppState } from '../AppContext.js';
 import { WHISPER_MODELS } from '../types.js';
 import type { ChatMessage, LocalModel, RunningModel, PullProgress } from '../types.js';
@@ -26,6 +26,7 @@ interface Command { cmd: string; description: string }
 const COMMANDS: Command[] = [
   { cmd: '/models',   description: 'Browse and mount/unmount LLMs and ASR models'  },
   { cmd: '/asr',      description: 'Record voice and transcribe (on-device Whisper)' },
+  { cmd: '/plugins',  description: 'Browse installed plugins and their tools'        },
   { cmd: '/clear',    description: 'Clear conversation history'                      },
   { cmd: '/automate', description: 'Run tasks from an automate.md file sequentially' },
   { cmd: '/help',     description: 'List all commands'                               },
@@ -83,10 +84,22 @@ export default function ChatTab(): React.ReactElement {
   const [pullingName, setPullingName]       = useState('');
 
   // Automate
-  const [automateInput, setAutomateInput]   = useState('');   // path the user is typing after /automate
   const [automateRunning, setAutomateRunning] = useState(false);
   const [automateTasks, setAutomateTasks]   = useState<AutomateTask[]>([]);
-  const [automateIdx, setAutomateIdx]       = useState(0);    // current task index
+  const [automateIdx, setAutomateIdx]       = useState(0);
+
+  // Plugins
+  const [pluginsOpen, setPluginsOpen]       = useState(false);
+  const [pluginsList, setPluginsList]       = useState<PluginInfo[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [pluginsSelIdx, setPluginsSelIdx]   = useState(0);
+  const [pluginsStatus, setPluginsStatus]   = useState('');
+
+  // Interrupt (double-ESC)
+  const abortControllerRef  = useRef<AbortController | null>(null);
+  const escPressedOnceRef   = useRef(false);
+  const escTimerRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [interrupted, setInterrupted] = useState(false);
 
   const isMounted     = useRef(true);
   const mountedLLMRef = useRef(mountedLLM);
@@ -109,7 +122,6 @@ export default function ChatTab(): React.ReactElement {
     setModelsLoading(false);
   }, [setMountedLLM]);
 
-  // Refresh when models overlay opens
   useEffect(() => {
     if (modelsOpen) void refreshModels();
   }, [modelsOpen, refreshModels]);
@@ -177,10 +189,15 @@ export default function ChatTab(): React.ReactElement {
     setPhase({ kind: 'waiting' });
     setSysMsg('');
     setScrollOffset(0);
+    setInterrupted(false);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     let reply = '';
     try {
-      for await (const event of api.agenticChatStream(replyModel, history, undefined, 0.7)) {
+      for await (const event of api.agenticChatStream(replyModel, history, undefined, 0.7, controller.signal)) {
+        if (controller.signal.aborted) break;
         switch (event.type) {
           case 'token':
             reply += event.token;
@@ -198,7 +215,6 @@ export default function ChatTab(): React.ReactElement {
             setCurrent('');
             setPhase({ kind: 'idle' });
             setStreaming(false);
-            setScrollOffset(0);
             break;
           case 'error':
             setSysMsg(`[Error: ${event.message}]`);
@@ -206,23 +222,29 @@ export default function ChatTab(): React.ReactElement {
             setCurrent('');
             setPhase({ kind: 'idle' });
             setStreaming(false);
-            setScrollOffset(0);
             break;
         }
       }
     } catch (e) {
-      const msg = `[Error: ${(e as Error).message}]`;
-      setMessages(prev => [...prev, { role: 'assistant', content: reply || msg }]);
+      const isAbort = (e as Error).name === 'AbortError';
+      if (!isAbort) {
+        const msg = `[Error: ${(e as Error).message}]`;
+        setMessages(prev => [...prev, { role: 'assistant', content: reply || msg }]);
+      }
       setCurrent('');
       setPhase({ kind: 'idle' });
       setStreaming(false);
-      setScrollOffset(0);
     }
+
+    if (controller.signal.aborted) {
+      if (reply) setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      setCurrent('');
+      setPhase({ kind: 'idle' });
+      setStreaming(false);
+    }
+    abortControllerRef.current = null;
   }, [mountedLLM, messages, streaming]);
 
-  // ── Automation runner ──────────────────────────────────────────────────────
-  // Executes each task from the parsed automate.md file one at a time,
-  // waiting for the previous agentic stream to finish before starting the next.
   const runAutomation = useCallback(async (filePath: string) => {
     const replyModel = mountedLLM;
     if (!replyModel) {
@@ -248,12 +270,15 @@ export default function ChatTab(): React.ReactElement {
     setAutomateIdx(0);
     setAutomateRunning(true);
     setSysMsg(`Running automation: ${parsed.count} task${parsed.count > 1 ? 's' : ''} from ${parsed.file}`);
+    setInterrupted(false);
 
-    // Run tasks sequentially — each task is a full agentic loop
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     let currentMessages: ChatMessage[] = [...messages];
 
     for (let i = 0; i < parsed.tasks.length; i++) {
-      if (!isMounted.current) break;
+      if (!isMounted.current || controller.signal.aborted) break;
       const task = parsed.tasks[i]!;
       setAutomateIdx(i);
 
@@ -267,8 +292,8 @@ export default function ChatTab(): React.ReactElement {
 
       let reply = '';
       try {
-        for await (const event of api.agenticChatStream(replyModel, currentMessages, undefined, 0.7)) {
-          if (!isMounted.current) break;
+        for await (const event of api.agenticChatStream(replyModel, currentMessages, undefined, 0.7, controller.signal)) {
+          if (!isMounted.current || controller.signal.aborted) break;
           switch (event.type) {
             case 'token':
               reply += event.token;
@@ -303,21 +328,41 @@ export default function ChatTab(): React.ReactElement {
           }
         }
       } catch (e) {
-        const msg = `[Task ${i + 1} error: ${(e as Error).message}]`;
-        currentMessages = [...currentMessages, { role: 'assistant', content: reply || msg }];
-        setMessages(currentMessages);
+        const isAbort = (e as Error).name === 'AbortError';
+        if (!isAbort) {
+          const msg = `[Task ${i + 1} error: ${(e as Error).message}]`;
+          currentMessages = [...currentMessages, { role: 'assistant', content: reply || msg }];
+          setMessages(currentMessages);
+        }
         setCurrent('');
         setPhase({ kind: 'idle' });
         setStreaming(false);
         setScrollOffset(0);
+        break;
+      }
+
+      if (controller.signal.aborted) {
+        if (reply) {
+          currentMessages = [...currentMessages, { role: 'assistant', content: reply }];
+          setMessages(currentMessages);
+        }
+        setCurrent('');
+        setPhase({ kind: 'idle' });
+        setStreaming(false);
+        setScrollOffset(0);
+        break;
       }
     }
+
+    abortControllerRef.current = null;
 
     if (isMounted.current) {
       setAutomateRunning(false);
       setAutomateTasks([]);
       setAutomateIdx(0);
-      setSysMsg(`Automation complete — ${parsed.count} task${parsed.count > 1 ? 's' : ''} finished`);
+      if (!interrupted) {
+        setSysMsg(`Automation complete — ${parsed.count} task${parsed.count > 1 ? 's' : ''} finished`);
+      }
     }
   }, [mountedLLM, messages, streaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -354,16 +399,29 @@ export default function ChatTab(): React.ReactElement {
     setAsrLoading(false);
   }, []);
 
+  const refreshPlugins = useCallback(async () => {
+    setPluginsLoading(true);
+    setPluginsStatus('');
+    try {
+      const res = await api.listPlugins();
+      if (!isMounted.current) return;
+      setPluginsList(res.plugins ?? []);
+    } catch (e) { setPluginsStatus(`Error: ${(e as Error).message}`); }
+    setPluginsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (pluginsOpen) void refreshPlugins();
+  }, [pluginsOpen, refreshPlugins]);
+
   const execCommand = useCallback((cmd: string) => {
     setPaletteOpen(false);
     setFilter('');
     setInput('');
 
-    // /automate may be called with an inline path: "/automate path/to/file.md"
     if (cmd.startsWith('/automate')) {
       const parts = cmd.trim().split(/\s+/);
       const filePath = parts[1] ?? 'automate.md';
-      setAutomateInput('');
       void runAutomation(filePath);
       return;
     }
@@ -374,6 +432,11 @@ export default function ChatTab(): React.ReactElement {
         setModelSection('llm');
         setModelsSelIdx(0);
         setModelsStatus('');
+        break;
+      case '/plugins':
+        setPluginsOpen(true);
+        setPluginsSelIdx(0);
+        setPluginsStatus('');
         break;
       case '/asr':
         void startASR();
@@ -396,7 +459,6 @@ export default function ChatTab(): React.ReactElement {
   const isPulling  = pullingName !== '';
 
   useInput((_inp, key) => {
-    // Models overlay consumes all keys
     if (modelsOpen) {
       if (showDownload) {
         if (key.escape) { setShowDownload(false); setDownloadInput(''); }
@@ -431,7 +493,26 @@ export default function ChatTab(): React.ReactElement {
       return;
     }
 
-    // ── Chat scroll (works even while streaming) ──────────────────────────────
+    if (pluginsOpen) {
+      if (key.escape) { setPluginsOpen(false); setPluginsStatus(''); return; }
+      if (_inp === 'r') {
+        setPluginsStatus('Reloading…');
+        api.reloadPlugins()
+          .then(res => {
+            if (!isMounted.current) return;
+            setPluginsList(res.plugins ?? []);
+            setPluginsSelIdx(0);
+            setPluginsStatus(`Reloaded — ${res.count} plugin${res.count !== 1 ? 's' : ''} loaded`);
+          })
+          .catch(e => setPluginsStatus(`Error: ${(e as Error).message}`));
+        return;
+      }
+      if (key.upArrow)   { setPluginsSelIdx(i => Math.max(0, i - 1)); return; }
+      if (key.downArrow) { setPluginsSelIdx(i => Math.min(pluginsList.length - 1, i + 1)); return; }
+      return;
+    }
+
+    // Chat scroll
     if (!paletteOpen) {
       if (key.upArrow) {
         setScrollOffset(o => Math.min(o + 1, Math.max(0, messages.length - CHAT_HEIGHT)));
@@ -441,6 +522,25 @@ export default function ChatTab(): React.ReactElement {
         setScrollOffset(o => Math.max(0, o - 1));
         return;
       }
+    }
+
+    // Double-ESC interrupt
+    if (streaming && key.escape) {
+      if (escPressedOnceRef.current) {
+        if (escTimerRef.current) clearTimeout(escTimerRef.current);
+        escPressedOnceRef.current = false;
+        setInterrupted(true);
+        setSysMsg('Interrupted');
+        abortControllerRef.current?.abort();
+      } else {
+        escPressedOnceRef.current = true;
+        setSysMsg('Press Esc again to stop generation');
+        escTimerRef.current = setTimeout(() => {
+          escPressedOnceRef.current = false;
+          setSysMsg('');
+        }, 1000);
+      }
+      return;
     }
 
     if (streaming) return;
@@ -460,7 +560,6 @@ export default function ChatTab(): React.ReactElement {
         const cmd = filteredCmds[paletteIdx];
         if (cmd) {
           if (cmd.cmd === '/automate') {
-            // Don't run immediately — let the user type the file path
             setPaletteOpen(false);
             setFilter('');
             setInput('/automate ');
@@ -471,8 +570,6 @@ export default function ChatTab(): React.ReactElement {
         }
         return;
       }
-      // Let backspace fall through to TextInput so the input value updates
-      // and handleInputChange can close the palette when / is deleted.
       if (key.backspace || key.delete) return;
       return;
     }
@@ -482,12 +579,9 @@ export default function ChatTab(): React.ReactElement {
 
   const handleInputChange = (val: string) => {
     setInput(val);
-    // "/automate " with a trailing space means the user is now typing a file
-    // path — close the palette so they can type freely.
     if (val.startsWith('/automate ')) {
       setPaletteOpen(false);
       setFilter('');
-      setAutomateInput(val.slice('/automate '.length));
     } else if (val.startsWith('/')) {
       setPaletteOpen(true);
       setFilter(val);
@@ -503,7 +597,6 @@ export default function ChatTab(): React.ReactElement {
     setInput('');
     const trimmed = val.trim();
     if (!trimmed) return;
-    // Full /automate command submitted inline (e.g. /automate automate.md)
     if (trimmed.startsWith('/automate')) {
       execCommand(trimmed);
       return;
@@ -524,8 +617,6 @@ export default function ChatTab(): React.ReactElement {
 
   const phaseLabel = (): React.ReactElement | null => {
     switch (phase.kind) {
-      case 'waiting':
-        return <Text color="yellow"><Spinner type="dots" />  Thinking…</Text>;
       case 'tool_call':
         return (
           <Text color="red">
@@ -547,7 +638,6 @@ export default function ChatTab(): React.ReactElement {
   if (modelsOpen) {
     return (
       <Box flexDirection="column">
-        {/* Header */}
         <Box marginBottom={1}>
           <Text color="red" bold>Models  </Text>
           <Text color={modelSection === 'llm' ? 'red' : 'gray'} bold={modelSection === 'llm'}>[l] LLMs  </Text>
@@ -555,7 +645,6 @@ export default function ChatTab(): React.ReactElement {
           <Text color="gray" dimColor>  [n] download  [r] refresh  [d] delete  Esc close</Text>
         </Box>
 
-        {/* Download input */}
         {showDownload && (
           <Box marginBottom={1}>
             <Text color="red">Download model: </Text>
@@ -576,7 +665,6 @@ export default function ChatTab(): React.ReactElement {
           <Text color="yellow"><Spinner type="dots" /> Refreshing…</Text>
         )}
 
-        {/* LLM list */}
         {modelSection === 'llm' && (
           <Box flexDirection="column">
             {localModels.length === 0 && !modelsLoading && (
@@ -605,7 +693,6 @@ export default function ChatTab(): React.ReactElement {
           </Box>
         )}
 
-        {/* ASR list */}
         {modelSection === 'asr' && (
           <Box flexDirection="column">
             <Box marginBottom={1}>
@@ -634,7 +721,6 @@ export default function ChatTab(): React.ReactElement {
           </Box>
         )}
 
-        {/* Download progress */}
         {isPulling && (
           <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="red" paddingX={1}>
             <Box>
@@ -657,12 +743,64 @@ export default function ChatTab(): React.ReactElement {
           </Box>
         )}
 
-        {/* Status */}
         {modelsStatus && !isPulling && (
           <Box marginTop={1}>
             <Text color={modelsStatus.startsWith('Error') || modelsStatus.startsWith('Pull error') ? 'red' : 'yellow'}>
               {modelsStatus}
             </Text>
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  if (pluginsOpen) {
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text color="red" bold>Plugins  </Text>
+          <Text color="gray" dimColor>  [r] reload  Esc close</Text>
+        </Box>
+
+        {pluginsLoading && (
+          <Text color="yellow"><Spinner type="dots" /> Loading…</Text>
+        )}
+
+        {!pluginsLoading && pluginsList.length === 0 && (
+          <Text color="gray" dimColor>No plugins found. Drop .py files into the plugins/ folder.</Text>
+        )}
+
+        {pluginsList.map((p, i) => {
+          const isSel = i === pluginsSelIdx;
+          return (
+            <Box key={p.file} flexDirection="column">
+              <Text color={isSel ? 'red' : 'gray'} bold={isSel}>
+                {isSel ? '▶ ' : '  '}
+                <Text color={isSel ? 'white' : 'gray'} bold={isSel}>{p.name}</Text>
+                <Text color="gray" dimColor>  v{p.version}  </Text>
+                <Text color="gray" dimColor>{p.description}</Text>
+              </Text>
+              {isSel && (
+                <Box paddingLeft={4} flexDirection="column">
+                  <Text color="gray" dimColor>
+                    Tools: {p.tools.length === 0 ? 'none' : p.tools.join(', ')}
+                  </Text>
+                  <Text color="gray" dimColor>File: {p.file}</Text>
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+
+        {pluginsList.length > 0 && (
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>↑↓ navigate  [r] reload plugins</Text>
+          </Box>
+        )}
+
+        {pluginsStatus && (
+          <Box marginTop={1}>
+            <Text color={pluginsStatus.startsWith('Error') ? 'red' : 'yellow'}>{pluginsStatus}</Text>
           </Box>
         )}
       </Box>
@@ -683,7 +821,10 @@ export default function ChatTab(): React.ReactElement {
             {activeWhisperModel && (
               <Text color="gray" dimColor>  · Whisper: {activeWhisperModel}</Text>
             )}
-            <Text color="gray" dimColor>  · type / for commands</Text>
+            {streaming
+              ? <Text color="gray" dimColor>  · Esc×2 to interrupt</Text>
+              : <Text color="gray" dimColor>  · type / for commands</Text>
+            }
           </Box>
         )}
       </Box>
@@ -692,8 +833,8 @@ export default function ChatTab(): React.ReactElement {
       {(canScrollUp || canScrollDown) && (
         <Box marginBottom={1}>
           <Text color="gray" dimColor>
-            {canScrollUp ? `↑ ${windowStart} above  ` : ''}
-            {canScrollDown ? '↓ newer below  ' : ''}
+            {canScrollUp   ? `↑ ${windowStart} above  ` : ''}
+            {canScrollDown ? `↓ ${clampedOff} below  ` : ''}
             ↑↓ scroll
           </Text>
         </Box>
@@ -714,12 +855,21 @@ export default function ChatTab(): React.ReactElement {
           </Box>
         ))}
 
+        {/* Phase indicator */}
         {streaming && phase.kind !== 'streaming' && phase.kind !== 'idle' && (
-          <Box paddingLeft={2} marginTop={0}>
+          <Box paddingLeft={2}>
             {phaseLabel()}
           </Box>
         )}
 
+        {/* Waiting spinner */}
+        {streaming && phase.kind === 'waiting' && (
+          <Box paddingLeft={2}>
+            <Text color="yellow"><Spinner type="dots" />  Thinking…</Text>
+          </Box>
+        )}
+
+        {/* Live streaming reply */}
         {streaming && phase.kind === 'streaming' && currentReply && (
           <Box flexDirection="column" marginBottom={1}>
             <Text color="yellow" bold>Otomato <Spinner type="dots" /></Text>
@@ -769,13 +919,17 @@ export default function ChatTab(): React.ReactElement {
         </Box>
       )}
 
-      {/* ASR / system status */}
+      {/* ASR / system / interrupt status */}
       {(sysMsg || recording || asrLoading) && (
         <Box marginBottom={1}>
           {recording ? (
             <Text color="red"><Spinner type="dots" />  RECORDING — press [s] to stop</Text>
           ) : asrLoading ? (
             <Text color="yellow"><Spinner type="dots" />  {sysMsg}</Text>
+          ) : interrupted ? (
+            <Text color="red">{sysMsg}</Text>
+          ) : sysMsg === 'Press Esc again to stop generation' ? (
+            <Text color="yellow">{sysMsg}</Text>
           ) : (
             <Text color="gray" dimColor>{sysMsg}</Text>
           )}
