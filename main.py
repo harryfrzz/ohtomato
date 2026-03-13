@@ -35,7 +35,7 @@ from PluginLoader import list_plugins, reload_plugins
 
 
 app = FastAPI(
-    title="Otomato API",
+    title="Ohtomato API",
     description="LLM automation backend powered by Ollama",
     version="2.0.0",
 )
@@ -88,8 +88,8 @@ class LoadModelRequest(BaseModel):
 
 
 class AutomateParseRequest(BaseModel):
-    path: str           # absolute or relative path to the .md file
-    cwd: Optional[str] = None  # working directory of the caller (Node process cwd)
+    path: str
+    cwd: Optional[str] = None
 
 
 

@@ -9,7 +9,7 @@ info()   { printf '\033[1;34m→\033[0m %s\n' "$1"; }
 error()  { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 echo ""
-echo "  Otomato — dependency installer"
+echo "  Ohtomato — dependency installer"
 echo "  ================================"
 echo ""
 
@@ -62,7 +62,7 @@ chmod +x "$ROOT/install.sh"
 status "Scripts are executable"
 
 echo ""
-echo "  All done. Run Otomato with:"
+echo "  All done. Run Ohtomato with:"
 echo ""
 echo "    ./run.sh"
 echo ""
