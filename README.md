@@ -12,8 +12,8 @@ A local AI automation agent that uses tool-calling LLMs to get real work done â€
 ## Quick Start
 
 ```bash
-git clone https://github.com/harryfrz/automato.git
-cd automato
+git clone https://github.com/harryfrz/ohtomato.git
+cd ohtomato
 ./install.sh
 ./run.sh
 ```
