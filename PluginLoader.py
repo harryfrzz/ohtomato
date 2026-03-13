@@ -1,24 +1,3 @@
-"""
-PluginLoader.py — discovers and loads Automato plugins from the plugins/ folder.
-
-Plugin contract
-───────────────
-A plugin is a .py file inside plugins/ that:
-  1. Defines a module-level PLUGIN_INFO dict with at least:
-       name        str   — display name
-       version     str   — semver string
-       description str   — one-line summary
-       tools       list  — names of async functions in this module to register
-  2. Implements each function listed in tools as an async def that:
-       - accepts typed parameters
-       - has a Google-style docstring (used by Ollama to build the JSON schema)
-       - returns a dict
-
-Loading is done at import time and re-triggered via reload_plugins().
-Errors in individual plugins are isolated — a bad plugin never prevents others
-from loading.
-"""
-
 import importlib.util
 import inspect
 import os
@@ -27,9 +6,8 @@ from typing import Any, Optional
 
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 
-# Populated by _load_all(); consumed by ToolCalling.py
-_loaded_plugins: list[dict] = []   # [{info, module, tools: [callable]}]
-_plugin_tools:   list[Any]  = []   # flat list of callables, appended to ALL_TOOLS
+_loaded_plugins: list[dict] = []
+_plugin_tools:   list[Any]  = []
 
 
 def _load_plugin(filepath: str) -> Optional[dict]:
@@ -103,7 +81,6 @@ def _load_all() -> None:
 
 
 def reload_plugins() -> list[dict]:
-    """Re-scan the plugins/ folder and reload everything. Returns plugin list."""
     _load_all()
     return list_plugins()
 
@@ -123,9 +100,7 @@ def list_plugins() -> list[dict]:
 
 
 def get_plugin_tools() -> list[Any]:
-    """Return the flat list of all callable tools from loaded plugins."""
     return list(_plugin_tools)
 
 
-# Load on import
 _load_all()

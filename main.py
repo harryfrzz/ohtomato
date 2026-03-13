@@ -35,7 +35,7 @@ from PluginLoader import list_plugins, reload_plugins
 
 
 app = FastAPI(
-    title="Automato API",
+    title="Otomato API",
     description="LLM automation backend powered by Ollama",
     version="2.0.0",
 )
@@ -333,8 +333,6 @@ async def execute_tool_endpoint(req: ExecuteToolRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Plugins ───────────────────────────────────────────────────────────────────
-
 @app.get("/plugins", tags=["plugins"])
 async def get_plugins():
     plugins = list_plugins()
@@ -347,29 +345,11 @@ async def reload_plugins_endpoint():
     return {"plugins": plugins, "count": len(plugins), "reloaded": True}
 
 
-# ── Automate ──────────────────────────────────────────────────────────────────
 
 @app.post("/automate/parse", tags=["automate"])
 async def automate_parse(req: AutomateParseRequest):
-    """
-    Read an automate.md file and return a list of prompt tasks.
-
-    The file format is:
-        ## Task title
-        Prompt text that the model should execute.
-
-        ## Another task
-        Another prompt.
-
-    Each ## heading defines a task. The text beneath it (until the next ##
-    or end of file) becomes the prompt body. The heading text is used as the
-    task name shown in the UI.
-    """
     path = os.path.expanduser(req.path)
     if not os.path.isabs(path):
-        # Prefer the cwd sent by the caller (Node process cwd = the directory
-        # the user launched automato from).  Fall back to the server's own cwd
-        # only when the caller doesn't supply one.
         base = req.cwd if req.cwd else os.getcwd()
         path = os.path.join(base, path)
 
@@ -384,9 +364,7 @@ async def automate_parse(req: AutomateParseRequest):
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
 
-    # Parse ## headings as task separators
     tasks: list[dict] = []
-    # Split on lines starting with exactly "## " (h2 only)
     sections = re.split(r'^##\s+', content, flags=re.MULTILINE)
     for section in sections:
         if not section.strip():
@@ -395,7 +373,6 @@ async def automate_parse(req: AutomateParseRequest):
         title = lines[0].strip()
         body = "\n".join(lines[1:]).strip()
         if not body:
-            # heading with no body — skip
             continue
         tasks.append({"title": title, "prompt": body})
 

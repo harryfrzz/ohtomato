@@ -1,4 +1,3 @@
-import asyncio
 import fnmatch
 import json
 import os
@@ -620,7 +619,6 @@ async def run_agentic_loop(
                 "name":    tool_name,
             })
 
-    # ── Reply model streams the final response ─────────────────────────────────
     reply_messages = list(messages)
     if tool_steps:
         summary_parts = [

@@ -84,7 +84,6 @@ export interface ToolCallResult {
   content?: string;
   raw?: string;
   error?: string;
-  /** Tool calls executed during the agentic loop, in order */
   tool_steps?: Array<{
     tool: string;
     arguments: Record<string, unknown>;
@@ -98,7 +97,6 @@ export interface ApiSearchResponse   { models: SearchModel[];  count: number }
 export interface ApiToolsResponse    { tools: ToolDefinition[];  count: number }
 export interface ApiRecordingStatus  { recording: boolean }
 
-// Whisper model registry
 export interface WhisperModelInfo {
   name: string;           // e.g. "base"
   label: string;          // display name
@@ -116,7 +114,6 @@ export const WHISPER_MODELS: WhisperModelInfo[] = [
   { name: 'large-v3', label: 'Whisper Large v3', size: '~2.9 GB', ollamaTag: 'whisper:large-v3' },
 ];
 
-// Shared app state passed down via context
 export interface AppState {
   mountedLLM: string | null;
   activeWhisperModel: string | null;
@@ -124,7 +121,6 @@ export interface AppState {
   setActiveWhisperModel: (name: string | null) => void;
 }
 
-// Agentic pipeline SSE event types
 export type AgenticEvent =
   | { type: 'token';       token: string }
   | { type: 'tool_call';   name: string; arguments: Record<string, unknown> }

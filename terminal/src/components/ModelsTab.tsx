@@ -1,8 +1,3 @@
-// src/components/ModelsTab.tsx
-// Two sections: LLMs · ASR (Whisper)
-// Enter on any row = mount/unmount. Green = mounted/active.
-// [n] download by name, [r] refresh, [d] delete.
-// Download progress is shown inline at the bottom — the model list stays visible.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
@@ -35,7 +30,6 @@ export default function ModelsTab(): React.ReactElement {
   const [loading, setLoading]         = useState(false);
   const [status, setStatus]           = useState('');
 
-  // Inline download progress — null means not downloading
   const [pullProgress, setPullProg]   = useState<PullProgress | null>(null);
   const [pullingName, setPullingName] = useState('');
 
@@ -50,7 +44,6 @@ export default function ModelsTab(): React.ReactElement {
 
   const sectionLen = section === 'llm' ? localModels.length : WHISPER_MODELS.length;
 
-  // ── refresh model lists ───────────────────────────────────────────────────
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,7 +63,6 @@ export default function ModelsTab(): React.ReactElement {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  // ── pull a model — keeps browse view visible, shows progress inline ───────
   const pullModel = useCallback(async (name: string): Promise<boolean> => {
     setPullingName(name);
     setPullProg({ status: 'Starting…', digest: '', total: 0, completed: 0, percent: 0 });
@@ -95,7 +87,6 @@ export default function ModelsTab(): React.ReactElement {
     return success;
   }, [refresh]);
 
-  // ── activate Whisper model ────────────────────────────────────────────────
   const activateWhisper = useCallback(async (modelName: string) => {
     setStatus(`Setting Whisper model: ${modelName}…`);
     try {
@@ -105,7 +96,6 @@ export default function ModelsTab(): React.ReactElement {
     } catch (e) { setStatus(`Error: ${(e as Error).message}`); }
   }, [setActiveWhisperModel]);
 
-  // ── mount / unmount LLM ───────────────────────────────────────────────────
   const toggleLLM = useCallback(async (name: string) => {
     const isRunning = runningModels.some(r => r.name === name);
     if (isRunning) {
@@ -127,7 +117,6 @@ export default function ModelsTab(): React.ReactElement {
     }
   }, [runningModels, setMountedLLM, refresh]);
 
-  // ── keyboard ──────────────────────────────────────────────────────────────
   useInput((input, key) => {
     // While downloading, only allow cancelling the name input
     if (showDownload) {
@@ -198,7 +187,6 @@ export default function ModelsTab(): React.ReactElement {
         <Text color="yellow"><Spinner type="dots" /> Refreshing…</Text>
       )}
 
-      {/* ── LLM section ──────────────────────────────────────────────────── */}
       {section === 'llm' && (
         <Box flexDirection="column">
           {localModels.length === 0 && !loading && (
@@ -230,7 +218,6 @@ export default function ModelsTab(): React.ReactElement {
         </Box>
       )}
 
-      {/* ── ASR / Whisper section ─────────────────────────────────────────── */}
       {section === 'asr' && (
         <Box flexDirection="column">
           <Box marginBottom={1}>
@@ -262,7 +249,6 @@ export default function ModelsTab(): React.ReactElement {
         </Box>
       )}
 
-      {/* ── Inline download progress ──────────────────────────────────────── */}
       {isPulling && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1}>
           <Box>
