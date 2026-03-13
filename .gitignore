@@ -1,6 +1,7 @@
-/.venv
-/__pycache__
+/core/.venv
+/core/__pycache__
 terminal/node_modules
 terminal/dist
 .DS_Store
 /.logs
+core/plugins/__pycache__

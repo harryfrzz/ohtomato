@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV="$ROOT/.venv"
+VENV="$ROOT/core/.venv"
 TERMINAL="$ROOT/terminal"
 LOG_DIR="$ROOT/.logs"
 
@@ -36,7 +36,7 @@ else
 fi
 
 source "$VENV/bin/activate"
-cd "$ROOT"
+cd "$ROOT/core"
 uvicorn main:app --host 0.0.0.0 --port 8000 >"$LOG_DIR/backend.log" 2>&1 &
 _pids+=($!)
 

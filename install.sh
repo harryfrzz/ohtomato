@@ -34,7 +34,7 @@ else
   status "Ollama installed"
 fi
 
-VENV="$ROOT/.venv"
+VENV="$ROOT/core/.venv"
 if [[ ! -d "$VENV" ]]; then
   info "Creating Python virtual environment…"
   python3 -m venv "$VENV"
