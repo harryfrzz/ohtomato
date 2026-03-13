@@ -60,12 +60,10 @@ export default function ChatTab(): React.ReactElement {
   const [sysMsg, setSysMsg]         = useState('');
   const [scrollOffset, setScrollOffset] = useState(0);
 
-  // Command palette
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteIdx, setPaletteIdx]   = useState(0);
   const [paletteFilter, setFilter]    = useState('');
 
-  // ASR
   const [recording, setRecording]     = useState(false);
   const [asrLoading, setAsrLoading]   = useState(false);
   const recordingRef  = useRef(false);
@@ -83,23 +81,24 @@ export default function ChatTab(): React.ReactElement {
   const [pullProgress, setPullProgress]     = useState<PullProgress | null>(null);
   const [pullingName, setPullingName]       = useState('');
 
-  // Automate
   const [automateRunning, setAutomateRunning] = useState(false);
   const [automateTasks, setAutomateTasks]   = useState<AutomateTask[]>([]);
   const [automateIdx, setAutomateIdx]       = useState(0);
 
-  // Plugins
   const [pluginsOpen, setPluginsOpen]       = useState(false);
   const [pluginsList, setPluginsList]       = useState<PluginInfo[]>([]);
   const [pluginsLoading, setPluginsLoading] = useState(false);
   const [pluginsSelIdx, setPluginsSelIdx]   = useState(0);
   const [pluginsStatus, setPluginsStatus]   = useState('');
 
-  // Interrupt (double-ESC)
   const abortControllerRef  = useRef<AbortController | null>(null);
   const escPressedOnceRef   = useRef(false);
   const escTimerRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [interrupted, setInterrupted] = useState(false);
+
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  const historyIdxRef  = useRef(-1);
+  const savedDraftRef  = useRef('');
 
   const isMounted     = useRef(true);
   const mountedLLMRef = useRef(mountedLLM);
@@ -512,14 +511,37 @@ export default function ChatTab(): React.ReactElement {
       return;
     }
 
-    // Chat scroll
+    // Chat scroll OR input history (↑↓)
     if (!paletteOpen) {
       if (key.upArrow) {
-        setScrollOffset(o => Math.min(o + 1, Math.max(0, messages.length - CHAT_HEIGHT)));
+        if (inputHistory.length > 0 && !streaming) {
+          // Start browsing or go further back
+          if (historyIdxRef.current === -1) {
+            savedDraftRef.current = input; // save current draft
+            historyIdxRef.current = inputHistory.length - 1;
+          } else {
+            historyIdxRef.current = Math.max(0, historyIdxRef.current - 1);
+          }
+          setInput(inputHistory[historyIdxRef.current] ?? '');
+        } else {
+          setScrollOffset(o => Math.min(o + 1, Math.max(0, messages.length - CHAT_HEIGHT)));
+        }
         return;
       }
       if (key.downArrow) {
-        setScrollOffset(o => Math.max(0, o - 1));
+        if (historyIdxRef.current !== -1) {
+          const nextIdx = historyIdxRef.current + 1;
+          if (nextIdx >= inputHistory.length) {
+            // Reached the bottom — restore draft
+            historyIdxRef.current = -1;
+            setInput(savedDraftRef.current);
+          } else {
+            historyIdxRef.current = nextIdx;
+            setInput(inputHistory[nextIdx] ?? '');
+          }
+        } else {
+          setScrollOffset(o => Math.max(0, o - 1));
+        }
         return;
       }
     }
@@ -597,6 +619,13 @@ export default function ChatTab(): React.ReactElement {
     setInput('');
     const trimmed = val.trim();
     if (!trimmed) return;
+    // Push to input history, reset browsing state
+    setInputHistory(prev => {
+      if (prev[prev.length - 1] === trimmed) return prev; // no duplicate consecutive
+      return [...prev, trimmed];
+    });
+    historyIdxRef.current = -1;
+    savedDraftRef.current = '';
     if (trimmed.startsWith('/automate')) {
       execCommand(trimmed);
       return;
@@ -845,7 +874,7 @@ export default function ChatTab(): React.ReactElement {
         {visible.map((m, i) => (
           <Box key={i} flexDirection="column" marginBottom={1}>
             <Text color={m.role === 'user' ? 'red' : 'yellow'} bold>
-              {m.role === 'user' ? 'You' : 'Otomato '}
+              {m.role === 'user' ? 'You' : 'Ohtomato '}
             </Text>
             <Box paddingLeft={2}>
               {m.role === 'assistant'
@@ -872,7 +901,7 @@ export default function ChatTab(): React.ReactElement {
         {/* Live streaming reply */}
         {streaming && phase.kind === 'streaming' && currentReply && (
           <Box flexDirection="column" marginBottom={1}>
-            <Text color="yellow" bold>Otomato <Spinner type="dots" /></Text>
+            <Text color="yellow" bold>Ohtomato <Spinner type="dots" /></Text>
             <Box paddingLeft={2}><MarkdownText>{currentReply}</MarkdownText></Box>
           </Box>
         )}

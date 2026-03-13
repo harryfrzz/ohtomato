@@ -6,7 +6,7 @@ PLUGIN_INFO = {
     "name":        "Obsidian",
     "version":     "1.0.0",
     "description": "Create, open and search notes in an Obsidian vault",
-    "author":      "otomato",
+    "author":      "ohtomato",
     "tools": [
         "obsidian_list_vaults",
         "obsidian_create_note",

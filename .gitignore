@@ -3,3 +3,4 @@
 terminal/node_modules
 terminal/dist
 .DS_Store
+/.logs

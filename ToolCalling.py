@@ -463,7 +463,6 @@ ALL_TOOLS: list = [
     get_weather,
 ]
 
-# Base tool map (built-ins only); plugins are merged at call time
 _BUILTIN_TOOL_MAP: dict[str, Any] = {fn.__name__: fn for fn in ALL_TOOLS}
 
 
@@ -522,22 +521,18 @@ async def run_agentic_loop(
     temperature: float = 0.7,
     max_iterations: int = 10,
 ) -> AsyncGenerator[dict, None]:
-    # Pre-load tool model to avoid cold-start latency
     try:
         await load_model(tool_model)
     except Exception:
         pass
-
-    # Tool model only sees the latest user message — not full history.
-    # Sending full history causes small models to reuse stale results.
-    latest_user_msg = next(
-        (m for m in reversed(messages) if m.get("role") == "user"), None
-    )
-    tool_history: list[dict] = (
-        [{"role": "system", "content": _AGENTIC_SYSTEM}, latest_user_msg]
-        if latest_user_msg
-        else [{"role": "system", "content": _AGENTIC_SYSTEM}] + list(messages)
-    )
+    prior_turns = [
+        m for m in messages
+        if m.get("role") in ("user", "assistant")
+    ]
+    tool_history: list[dict] = [
+        {"role": "system", "content": _AGENTIC_SYSTEM},
+        *prior_turns,
+    ]
 
     tool_steps: list[dict] = []
 
@@ -567,7 +562,6 @@ async def run_agentic_loop(
                 return res["stdout"]
         return write_content
 
-    # ── Tool loop ──────────────────────────────────────────────────────────────
     for _iteration in range(max_iterations):
         try:
             response = await _client.chat(
@@ -619,7 +613,11 @@ async def run_agentic_loop(
                 "name":    tool_name,
             })
 
-    reply_messages = list(messages)
+    reply_messages = [
+        m for m in messages
+        if m.get("role") in ("user", "assistant", "system")
+        and m.get("content", "").find("All tool calls have been executed") == -1
+    ]
     if tool_steps:
         summary_parts = [
             f"Tool `{s['tool']}` called with {json.dumps(s['args'])}:\n"
