@@ -95,7 +95,7 @@ class AutomateParseRequest(BaseModel):
 
 @app.get("/", tags=["health"])
 async def root():
-    return {"service": "Automato", "version": "2.0.0", "status": "ok"}
+    return {"service": "Ohtomato", "version": "2.0.0", "status": "ok"}
 
 
 @app.get("/health", tags=["health"])

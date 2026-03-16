@@ -11,9 +11,8 @@ _plugin_tools:   list[Any]  = []
 
 
 def _load_plugin(filepath: str) -> Optional[dict]:
-    """Import one plugin file and return its registry entry, or None on failure."""
     name = os.path.splitext(os.path.basename(filepath))[0]
-    spec = importlib.util.spec_from_file_location(f"automato_plugin_{name}", filepath)
+    spec = importlib.util.spec_from_file_location(f"Ohtomato_plugin_{name}", filepath)
     if spec is None or spec.loader is None:
         return None
 

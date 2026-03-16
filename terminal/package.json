@@ -1,10 +1,10 @@
 {
-  "name": "automato-terminal",
+  "name": "ohtomato-terminal",
   "version": "1.0.0",
-  "description": "Automato terminal UI powered by Ink",
+  "description": "ohtomato",
   "type": "module",
   "bin": {
-    "automato": "./dist/index.mjs"
+    "ohtomato": "./dist/index.mjs"
   },
   "scripts": {
     "build": "esbuild src/index.tsx --bundle --platform=node --format=esm --external:ink --external:react --external:ink-text-input --external:ink-select-input --external:ink-spinner --external:node-fetch --loader:.tsx=tsx --loader:.ts=ts --outfile=dist/index.mjs --log-level=silent",

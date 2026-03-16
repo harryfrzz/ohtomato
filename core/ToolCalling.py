@@ -385,7 +385,7 @@ async def search_web(query: str, max_results: int = 5) -> dict:
             resp = await hc.get(
                 "https://api.duckduckgo.com/",
                 params={"q": query, "format": "json", "no_redirect": "1", "no_html": "1"},
-                headers={"User-Agent": "Automato/2.0"},
+                headers={"User-Agent": "Ohtomato/2.0"},
             )
         data    = resp.json()
         results = []
@@ -417,7 +417,7 @@ async def get_weather(location: str, unit: str = "celsius") -> dict:
             resp = await hc.get(
                 f"https://wttr.in/{location}",
                 params={"format": "j1", fmt: ""},
-                headers={"User-Agent": "Automato/2.0"},
+                headers={"User-Agent": "Ohtomato/2.0"},
             )
         data    = resp.json()
         current = data["current_condition"][0]

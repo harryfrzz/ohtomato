@@ -691,7 +691,7 @@ export default function ChatTab(): React.ReactElement {
         )}
 
         {modelsLoading && !showDownload && !isPulling && (
-          <Text color="yellow"><Spinner type="dots" /> Refreshing…</Text>
+          <Text color="yellow"><Text color="yellow"><Spinner type="dots" /> Refreshing…</Text></Text>
         )}
 
         {modelSection === 'llm' && (
@@ -792,7 +792,7 @@ export default function ChatTab(): React.ReactElement {
         </Box>
 
         {pluginsLoading && (
-          <Text color="yellow"><Spinner type="dots" /> Loading…</Text>
+          <Text color="yellow"><Text color="yellow"><Spinner type="dots" /> Loading…</Text></Text>
         )}
 
         {!pluginsLoading && pluginsList.length === 0 && (
