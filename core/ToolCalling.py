@@ -3,6 +3,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -223,14 +224,18 @@ async def search_in_files(directory: str, pattern: str, file_pattern: str = "*",
 async def run_command(command: str, workdir: str = "~", timeout: int = 30, background: bool = False) -> dict:
     cwd = _resolve(workdir)
     try:
+        args = shlex.split(command)
+    except ValueError as ex:
+        return {"error": f"Invalid command syntax: {ex}", "command": command}
+    try:
         if background:
             subprocess.Popen(
-                command, shell=True, cwd=cwd,
+                args, cwd=cwd,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             return {"status": "started_in_background", "command": command}
         result = subprocess.run(
-            command, shell=True, cwd=cwd,
+            args, cwd=cwd,
             capture_output=True, text=True, timeout=timeout,
         )
         return {
