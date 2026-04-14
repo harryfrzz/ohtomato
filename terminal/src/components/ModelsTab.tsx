@@ -20,7 +20,7 @@ function fmtBytes(b: number): string {
   return `${b} B`;
 }
 
-export default function ModelsTab(): React.ReactElement {
+export default function ModelsTab({ onClose }: { onClose: () => void }): React.ReactElement {
   const { mountedLLM, setMountedLLM, activeWhisperModel, setActiveWhisperModel } = useAppState();
 
   const [section, setSection]         = useState<Section>('llm');
@@ -121,6 +121,11 @@ export default function ModelsTab(): React.ReactElement {
     // While downloading, only allow cancelling the name input
     if (showDownload) {
       if (key.escape) { setShowDL(false); setDownload(''); }
+      return;
+    }
+
+    if (key.escape) {
+      onClose();
       return;
     }
 

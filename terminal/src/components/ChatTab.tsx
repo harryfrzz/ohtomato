@@ -3,23 +3,14 @@ import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import MarkdownText from './MarkdownText.js';
+import ModelsTab from './ModelsTab.js';
 import * as api from '../api.js';
 import type { AutomateTask, PluginInfo } from '../api.js';
 import { useAppState } from '../AppContext.js';
-import { WHISPER_MODELS } from '../types.js';
-import type { ChatMessage, LocalModel, RunningModel, PullProgress } from '../types.js';
+import type { ChatMessage } from '../types.js';
 
 
-function buildBar(pct: number, width: number): string {
-  const filled = Math.round((pct / 100) * width);
-  return '█'.repeat(filled) + '░'.repeat(width - filled);
-}
-function fmtBytes(b: number): string {
-  if (!b) return '';
-  if (b > 1e9) return `${(b / 1e9).toFixed(1)} GB`;
-  if (b > 1e6) return `${(b / 1e6).toFixed(1)} MB`;
-  return `${b} B`;
-}
+
 
 
 interface Command { cmd: string; description: string }
@@ -43,14 +34,11 @@ type Phase =
   | { kind: 'tool_result'; tool: string; result: unknown };
 
 
-type ModelSection = 'llm' | 'asr';
+
 
 
 export default function ChatTab(): React.ReactElement {
-  const {
-    mountedLLM, activeWhisperModel,
-    setMountedLLM, setActiveWhisperModel,
-  } = useAppState();
+  const { mountedLLM, activeWhisperModel } = useAppState();
 
   const [input, setInput]           = useState('');
   const [messages, setMessages]     = useState<ChatMessage[]>([]);
@@ -70,16 +58,6 @@ export default function ChatTab(): React.ReactElement {
   const asrLoadingRef = useRef(false);
 
   const [modelsOpen, setModelsOpen]         = useState(false);
-  const [modelSection, setModelSection]     = useState<ModelSection>('llm');
-  const [localModels, setLocalModels]       = useState<LocalModel[]>([]);
-  const [runningModels, setRunningModels]   = useState<RunningModel[]>([]);
-  const [modelsLoading, setModelsLoading]   = useState(false);
-  const [modelsStatus, setModelsStatus]     = useState('');
-  const [modelsSelIdx, setModelsSelIdx]     = useState(0);
-  const [showDownload, setShowDownload]     = useState(false);
-  const [downloadInput, setDownloadInput]   = useState('');
-  const [pullProgress, setPullProgress]     = useState<PullProgress | null>(null);
-  const [pullingName, setPullingName]       = useState('');
 
   const [automateRunning, setAutomateRunning] = useState(false);
   const [automateTasks, setAutomateTasks]   = useState<AutomateTask[]>([]);
@@ -106,72 +84,7 @@ export default function ChatTab(): React.ReactElement {
 
   useEffect(() => () => { isMounted.current = false; }, []);
 
-  const refreshModels = useCallback(async () => {
-    setModelsLoading(true);
-    try {
-      const [loc, run] = await Promise.all([api.listModels(), api.runningModels()]);
-      if (!isMounted.current) return;
-      setLocalModels(loc.models ?? []);
-      setRunningModels(run.models ?? []);
-      const running = run.models ?? [];
-      const current = mountedLLMRef.current;
-      if (current && !running.some(r => r.name === current)) setMountedLLM(null);
-      setModelsStatus('');
-    } catch (e) { setModelsStatus(`Error: ${(e as Error).message}`); }
-    setModelsLoading(false);
-  }, [setMountedLLM]);
 
-  useEffect(() => {
-    if (modelsOpen) void refreshModels();
-  }, [modelsOpen, refreshModels]);
-
-  const pullModel = useCallback(async (name: string) => {
-    setPullingName(name);
-    setPullProgress({ status: 'Starting…', digest: '', total: 0, completed: 0, percent: 0 });
-    setModelsStatus('');
-    try {
-      for await (const prog of api.pullModelStream(name)) {
-        if (!isMounted.current) return;
-        if (prog.status === 'done') break;
-        setPullProgress(prog);
-      }
-      setModelsStatus(`Downloaded: ${name}`);
-      void refreshModels();
-    } catch (e) {
-      setModelsStatus(`Pull error: ${(e as Error).message}`);
-    }
-    if (isMounted.current) { setPullProgress(null); setPullingName(''); }
-  }, [refreshModels]);
-
-  const activateWhisper = useCallback(async (modelName: string) => {
-    setModelsStatus(`Setting Whisper model: ${modelName}…`);
-    try {
-      await api.setWhisperModel(modelName);
-      setActiveWhisperModel(modelName);
-      setModelsStatus(`Whisper model set: ${modelName}`);
-    } catch (e) { setModelsStatus(`Error: ${(e as Error).message}`); }
-  }, [setActiveWhisperModel]);
-
-  const toggleLLM = useCallback(async (name: string) => {
-    const isRunning = runningModels.some(r => r.name === name);
-    if (isRunning) {
-      setModelsStatus(`Unloading ${name}…`);
-      try {
-        await api.unloadModel(name);
-        setMountedLLM(null);
-        setModelsStatus(`Unmounted: ${name}`);
-        void refreshModels();
-      } catch (e) { setModelsStatus(`Error: ${(e as Error).message}`); }
-    } else {
-      setModelsStatus(`Mounting ${name}…`);
-      try {
-        await api.loadModel(name);
-        setMountedLLM(name);
-        setModelsStatus(`Mounted: ${name}`);
-        setTimeout(() => { void refreshModels(); }, 600);
-      } catch (e) { setModelsStatus(`Error: ${(e as Error).message}`); }
-    }
-  }, [runningModels, setMountedLLM, refreshModels]);
 
   const sendMessage = useCallback(async (text: string) => {
     const replyModel = mountedLLM;
@@ -428,9 +341,6 @@ export default function ChatTab(): React.ReactElement {
     switch (cmd) {
       case '/models':
         setModelsOpen(true);
-        setModelSection('llm');
-        setModelsSelIdx(0);
-        setModelsStatus('');
         break;
       case '/plugins':
         setPluginsOpen(true);
@@ -447,50 +357,15 @@ export default function ChatTab(): React.ReactElement {
         setSysMsg(COMMANDS.map(c => `${c.cmd} — ${c.description}`).join('  |  '));
         break;
     }
-  }, [startASR, mountedLLM, activeWhisperModel, runAutomation]);
+  }, [startASR, mountedLLM, runAutomation]);
 
   const filteredCmds = COMMANDS.filter(c =>
     c.cmd.startsWith(paletteFilter) ||
     c.description.toLowerCase().includes(paletteFilter.replace('/', '').toLowerCase())
   );
 
-  const sectionLen = modelSection === 'llm' ? localModels.length : WHISPER_MODELS.length;
-  const isPulling  = pullingName !== '';
-
   useInput((_inp, key) => {
-    if (modelsOpen) {
-      if (showDownload) {
-        if (key.escape) { setShowDownload(false); setDownloadInput(''); }
-        return;
-      }
-      if (key.escape)    { setModelsOpen(false); setModelsStatus(''); return; }
-      if (_inp === 'l')  { setModelSection('llm'); setModelsSelIdx(0); return; }
-      if (_inp === 'a')  { setModelSection('asr'); setModelsSelIdx(0); return; }
-      if (_inp === 'r')  { void refreshModels(); return; }
-      if (_inp === 'n')  { setShowDownload(true); setDownloadInput(''); return; }
-      if (key.upArrow)   { setModelsSelIdx(i => Math.max(0, i - 1)); return; }
-      if (key.downArrow) { setModelsSelIdx(i => Math.min(sectionLen - 1, i + 1)); return; }
-      if (key.return) {
-        if (modelSection === 'llm') {
-          const m = localModels[modelsSelIdx];
-          if (m) void toggleLLM(m.name);
-        } else {
-          const w = WHISPER_MODELS[modelsSelIdx];
-          if (w) void activateWhisper(w.name);
-        }
-        return;
-      }
-      if (_inp === 'd' && modelSection === 'llm') {
-        const m = localModels[modelsSelIdx];
-        if (m) {
-          api.deleteModel(m.name)
-            .then(() => { setModelsStatus(`Deleted: ${m.name}`); void refreshModels(); })
-            .catch(e => setModelsStatus(`Error: ${(e as Error).message}`));
-        }
-        return;
-      }
-      return;
-    }
+    if (modelsOpen) return;
 
     if (pluginsOpen) {
       if (key.escape) { setPluginsOpen(false); setPluginsStatus(''); return; }
@@ -642,7 +517,6 @@ export default function ChatTab(): React.ReactElement {
   const canScrollUp   = windowStart > 0;
   const canScrollDown = clampedOff > 0;
   const noModel  = !mountedLLM;
-  const pullPct  = pullProgress?.percent ?? 0;
 
   const phaseLabel = (): React.ReactElement | null => {
     switch (phase.kind) {
@@ -665,122 +539,7 @@ export default function ChatTab(): React.ReactElement {
   };
 
   if (modelsOpen) {
-    return (
-      <Box flexDirection="column">
-        <Box marginBottom={1}>
-          <Text color="red" bold>Models  </Text>
-          <Text color={modelSection === 'llm' ? 'red' : 'gray'} bold={modelSection === 'llm'}>[l] LLMs  </Text>
-          <Text color={modelSection === 'asr' ? 'red' : 'gray'} bold={modelSection === 'asr'}>[a] ASR  </Text>
-          <Text color="gray" dimColor>  [n] download  [r] refresh  [d] delete  Esc close</Text>
-        </Box>
-
-        {showDownload && (
-          <Box marginBottom={1}>
-            <Text color="red">Download model: </Text>
-            <TextInput
-              value={downloadInput}
-              onChange={setDownloadInput}
-              onSubmit={v => {
-                setShowDownload(false);
-                setDownloadInput('');
-                if (v.trim()) void pullModel(v.trim());
-              }}
-              placeholder="e.g. llama3.2, mistral, phi4…  (Esc to cancel)"
-            />
-          </Box>
-        )}
-
-        {modelsLoading && !showDownload && !isPulling && (
-          <Text color="yellow"><Text color="yellow"><Spinner type="dots" /> Refreshing…</Text></Text>
-        )}
-
-        {modelSection === 'llm' && (
-          <Box flexDirection="column">
-            {localModels.length === 0 && !modelsLoading && (
-              <Text color="gray" dimColor>No LLMs installed. Press [n] to download one.</Text>
-            )}
-            {localModels.map((m, i) => {
-              const isRunning = runningModels.some(r => r.name === m.name);
-              const isSel     = i === modelsSelIdx;
-              const isMntd    = m.name === mountedLLM;
-              return (
-                <Box key={m.name}>
-                  <Text color={isRunning ? 'yellow' : isSel ? 'red' : 'white'} bold={isSel || isRunning}>
-                    {isSel ? '▶ ' : '  '}
-                    <Text color={isRunning ? 'yellow' : 'gray'}>{isRunning ? '● ' : '○ '}</Text>
-                    {m.name.padEnd(36)}
-                    <Text color="gray">{fmtBytes(m.size).padEnd(10)}</Text>
-                    <Text color="gray" dimColor>{m.details?.parameter_size ?? ''}</Text>
-                    {isMntd && <Text color="yellow" bold>  ← active</Text>}
-                  </Text>
-                </Box>
-              );
-            })}
-            <Box marginTop={1}>
-              <Text color="gray" dimColor>Enter = mount/unmount  ● loaded  ○ unloaded</Text>
-            </Box>
-          </Box>
-        )}
-
-        {modelSection === 'asr' && (
-          <Box flexDirection="column">
-            <Box marginBottom={1}>
-              <Text color="gray" dimColor>
-                Whisper runs on-device. Select a size to activate (weights download on first use).
-              </Text>
-            </Box>
-            {WHISPER_MODELS.map((w, i) => {
-              const isActive = w.name === activeWhisperModel;
-              const isSel    = i === modelsSelIdx;
-              return (
-                <Box key={w.name}>
-                  <Text color={isActive ? 'yellow' : isSel ? 'red' : 'white'} bold={isSel || isActive}>
-                    {isSel ? '▶ ' : '  '}
-                    <Text color={isActive ? 'yellow' : 'gray'}>{isActive ? '● ' : '○ '}</Text>
-                    {w.label.padEnd(24)}
-                    <Text color="gray">{w.size.padEnd(12)}</Text>
-                    {isActive && <Text color="yellow" bold>← active</Text>}
-                  </Text>
-                </Box>
-              );
-            })}
-            <Box marginTop={1}>
-              <Text color="gray" dimColor>Enter = activate model</Text>
-            </Box>
-          </Box>
-        )}
-
-        {isPulling && (
-          <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="red" paddingX={1}>
-            <Box>
-              <Text color="red" bold><Spinner type="dots" />{'  '}</Text>
-              <Text color="white" bold>Downloading </Text>
-              <Text color="cyan" bold>{pullingName}</Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text color="yellow">[{buildBar(pullPct, 40)}] {pullPct.toFixed(1)}%</Text>
-            </Box>
-            {(pullProgress?.total ?? 0) > 0 && (
-              <Text color="gray">
-                {fmtBytes(pullProgress!.completed)} / {fmtBytes(pullProgress!.total)}
-                {'  '}{pullProgress?.status}
-              </Text>
-            )}
-            {(pullProgress?.total ?? 0) === 0 && pullProgress?.status && (
-              <Text color="gray" dimColor>{pullProgress.status}</Text>
-            )}
-          </Box>
-        )}
-
-        {modelsStatus && !isPulling && (
-          <Box marginTop={1}>
-            <Text color={modelsStatus.startsWith('Error') || modelsStatus.startsWith('Pull error') ? 'red' : 'yellow'}>
-              {modelsStatus}
-            </Text>
-          </Box>
-        )}
-      </Box>
-    );
+    return <ModelsTab onClose={() => setModelsOpen(false)} />;
   }
 
   if (pluginsOpen) {
