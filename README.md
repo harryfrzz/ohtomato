@@ -12,7 +12,7 @@ A local AI automation agent that uses tool-calling LLMs to get real work done â€
 ## Quick Start
 
 ```bash
-git clone https://github.com/harryfrz/ohtomato.git
+git clone https://github.com/harryfrzz/ohtomato.git
 cd ohtomato
 ./install.sh
 ./run.sh
@@ -33,6 +33,11 @@ cd ohtomato
 
 **Not working:**
 - None yet â€” if you find issues, please post them
+
+## Recent Fixes
+- Stripped inline model overlay code out of `ChatTab` into the `ModelsTab` component for cleaner UI state management.
+- Added `python-multipart` to backend requirements to prevent uvicorn crashes.
+- Minor installer fixes for `install.sh`.
 
 ## Features
 
